@@ -193,6 +193,21 @@
     saveNow(card); renderBoard(); openCard(card.id);
   }
 
+  // Copies the ad definition, copy and links into a fresh ID. Dates, hand-offs,
+  // notes and learnings start clean, since the new ad has to earn its own.
+  function duplicateCard(src) {
+    const card = D.newCard(D.nextId(state.cards), src.status);
+    ['angle', 'funnel', 'product', 'creativeType', 'formatType', 'ai', 'description', 'inspirationLink',
+      'landingPage', 'primaryOne', 'primaryTwo', 'headlineOne', 'headlineTwo', 'canvaLandscape', 'canvaSquare',
+      'owner', 'notes'].forEach(function (k) { card[k] = src[k] || ''; });
+    card.order = (src.order || 0) + 1;
+    card.activity.push({ at: new Date().toISOString(), text: 'Duplicated from #' + src.id });
+    log(src, 'Duplicated as #' + card.id);
+    state.cards.push(card);
+    saveNow(src); saveNow(card); renderBoard(); openCard(card.id);
+    toast('#' + src.id + ' duplicated as #' + card.id);
+  }
+
   /* ---------- drawer ---------- */
   function openCard(id) { openId = id; renderDrawer(); $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden', 'false'); $('scrim').classList.add('open'); }
   function closeDrawer() { openId = null; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden', 'true'); $('scrim').classList.remove('open'); }
@@ -290,7 +305,7 @@
       '<details style="margin-top:12px"><summary>Activity</summary><ul class="activity">' + card.activity.slice().reverse().map(function (a) { return '<li><time>' + esc(relTime(a.at)) + '</time>' + esc(a.text) + '</li>'; }).join('') + '</ul></details></div>';
 
     $('drawerFoot').innerHTML =
-      '<button class="btn danger quiet" id="deleteCard">Delete ticket</button><div class="spacer"></div>' +
+      '<button class="btn danger quiet" id="deleteCard">Delete ticket</button><button class="btn quiet" id="dupCard">Duplicate</button><div class="spacer"></div>' +
       '<button class="btn" id="movePrev"' + (idx <= 0 ? ' disabled' : '') + '>&larr; ' + (idx > 0 ? esc(statusList()[idx - 1].label) : 'Back') + '</button>' +
       '<button class="btn primary" id="moveNext"' + (idx >= statusList().length - 1 ? ' disabled' : '') + '>' + (idx < statusList().length - 1 ? esc(statusList()[idx + 1].label) : 'Done') + ' &rarr;</button>';
 
@@ -302,6 +317,7 @@
     $('f-status').onchange = function (e) { moveCard(card, e.target.value); };
     $('movePrev').onclick = function () { const i = statusIndex(card.status); if (i > 0) moveCard(card, statusList()[i - 1].key); };
     $('moveNext').onclick = function () { const i = statusIndex(card.status); if (i < statusList().length - 1) moveCard(card, statusList()[i + 1].key); };
+    $('dupCard').onclick = function () { duplicateCard(card); };
     $('deleteCard').onclick = function () {
       if (!confirm('Delete ticket #' + card.id + '? This cannot be undone.')) return;
       state.cards = state.cards.filter(function (c) { return c.id !== card.id; });
