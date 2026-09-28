@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Jawda Ads Board</title>
+  <meta name="description" content="Kanban board for Jawda's Meta ad creative pipeline, from brief to published ad.">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <meta name="theme-color" content="#401D24">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600&family=Playfair+Display:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <h1 class="wordmark"><img src="assets/jawda-wordmark-cream.png" alt="Jawda" width="471" height="199"></h1>
+      <div class="board-title">
+        <label class="sr-only" for="boardName">Board name</label>
+        <input id="boardName" type="text" value="SILIBI Meta Ads Max Vol. 3" spellcheck="false">
+        <small id="boardSummary">Loading</small>
+      </div>
+      <div class="spacer"></div>
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <label class="sr-only" for="search">Search tickets</label>
+        <input id="search" type="search" placeholder="Search ID, name, copy, product">
+      </div>
+      <span class="sync local" id="sync"><span class="dot"></span><span id="syncLabel">Saved in this browser</span></span>
+      <div class="menu-wrap">
+        <button class="btn" id="dataMenuBtn" aria-haspopup="true" aria-expanded="false">Data</button>
+        <div class="menu" id="dataMenu" role="menu">
+          <button data-act="import">Import from sheet (CSV)</button>
+          <button data-act="export">Export to CSV</button>
+          <hr>
+          <button data-act="backup">Download backup (JSON)</button>
+          <button data-act="restore">Restore backup (JSON)</button>
+          <input type="file" id="fileInput" accept=".csv,.json,text/csv,application/json" hidden>
+        </div>
+      </div>
+      <button class="btn" id="settingsBtn">Settings</button>
+      <button class="btn primary" id="newBtn">New ticket</button>
+    </header>
+
+    <div class="filters" id="filters">
+      <select id="fAngle"><option value="">All angles</option></select>
+      <select id="fFunnel"><option value="">All funnels</option></select>
+      <select id="fFormat"><option value="">All formats</option></select>
+      <select id="fType"><option value="">All creative types</option></select>
+      <select id="fOwner"><option value="">Everyone</option></select>
+      <button class="btn quiet small" id="clearFilters" hidden>Clear</button>
+      <span class="count" id="filterCount"></span>
+    </div>
+
+    <main class="board" id="board" aria-label="Kanban board"></main>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Ticket details">
+    <div class="drawer-head" id="drawerHead"></div>
+    <div class="drawer-body" id="drawerBody"></div>
+    <div class="drawer-foot" id="drawerFoot"></div>
+  </aside>
+
+  <div class="modal" id="modal" role="dialog" aria-modal="true">
+    <div class="box">
+      <header><h2 id="modalTitle">Settings</h2><button class="btn quiet" id="modalClose">Close</button></header>
+      <div class="content" id="modalContent"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/config.js"></script>
+  <script>
+    // Load the Supabase client only when the team has configured shared storage.
+    (function () {
+      var c = window.JAWDA_CONFIG && window.JAWDA_CONFIG.supabase;
+      if (c && c.url && c.anonKey) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"><\/script>');
+      }
+    })();
+  </script>
+  <script src="js/data.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
