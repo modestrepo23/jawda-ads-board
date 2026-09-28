@@ -7,8 +7,8 @@
 
 window.JAWDA_CONFIG = {
   supabase: {
-  url: 'https://gqagsngzacidzxdrdeqx.supabase.co',
-    anonKey: 'sb_publishable_yreVl_8J94O8CxvIoNyicQ_kcxA4WGU',    // the "anon public" key from Project settings > API
+    url: '',        // e.g. 'https://abcdefghijk.supabase.co'
+    anonKey: '',    // the "anon public" key from Project settings > API
     boardKey: 'silibi-meta-vol3'  // one key per board; change it to run a second board
   }
 };

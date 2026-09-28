@@ -10,13 +10,16 @@ window.JawdaData = (function () {
     { key: 'backlog', label: 'Backlog', hint: 'Ideas and angles not yet briefed' },
     { key: 'brief-prepared', label: 'Brief prepared', hint: 'Brief written, waiting on content' },
     { key: 'awaiting-creative', label: 'Awaiting creative', hint: 'With studio, agency or editor' },
+    { key: 'awaiting-approval', label: 'Awaiting approval', hint: 'Awaiting approval for creative' },
     { key: 'creative-ready', label: 'Creative ready', hint: 'Asset delivered, needs copy' },
     { key: 'in-progress', label: 'In progress', hint: 'Copy, links and Canva being built' },
-    { key: 'awaiting-approval', label: 'Awaiting approval', hint: 'Ready for sign-off' },
+    { key: 'approved', label: 'Approved', hint: 'Awaiting publishing' },
     { key: 'published', label: 'Published', hint: 'Live in Ads Manager' },
-    { key: 'retired', label: 'Retired', hint: 'Switched off, kept for learnings', collapsed: true },
     { key: 'rejected', label: 'Rejected', hint: 'Not going ahead', collapsed: true }
   ];
+
+  // The first ID a fresh board hands out. Later IDs are the highest on the board plus one.
+  const FIRST_ID = 1142;
 
   // Option sets seeded from the Vol. 3 tab. All are editable in Settings and
   // every select also accepts a typed value.
@@ -54,6 +57,7 @@ window.JawdaData = (function () {
   // import and export round-trip cleanly.
   const FIELDS = [
     { key: 'status', sheet: 'Approved?', type: 'status' },
+    { key: 'brief', sheet: 'Brief', type: 'text' },
     { key: 'launchDate', sheet: 'Launch Date', type: 'date' },
     { key: 'id', sheet: 'ID', type: 'id' },
     { key: 'angle', sheet: 'Angle', type: 'option', options: 'angle' },
@@ -91,11 +95,11 @@ window.JawdaData = (function () {
       id: String(id),
       status: status || 'backlog',
       launchDate: '', angle: '', funnel: '', product: '', creativeType: '', formatType: '', ai: '',
-      nameOverride: '', inspirationLink: '', description: '', landingPage: '', utmOverride: '',
+      brief: '', nameOverride: '', inspirationLink: '', description: '', landingPage: '', utmOverride: '',
       primaryOne: '', primaryTwo: '', headlineOne: '', headlineTwo: '',
       canvaLandscape: '', canvaSquare: '', learnings: '',
       briefPreparedDate: '', creativeReadyDate: '',
-      owner: '', dueDate: '', notes: '',
+      owner: '', dueDate: '', notes: '', stageDates: {},
       checklist: { brief: false, creative: false, copy: false, links: false, approved: false },
       comments: [], activity: [{ at: now, text: 'Ticket created' }],
       order: Date.now(), createdAt: now, updatedAt: now
@@ -129,9 +133,15 @@ window.JawdaData = (function () {
   }
 
   function nextId(cards) {
-    let max = 1000;
+    let max = 0;
     cards.forEach(function (c) { const n = parseInt(c.id, 10); if (!isNaN(n) && n > max) max = n; });
-    return String(max + 1);
+    return String(max ? max + 1 : FIRST_ID);
+  }
+
+  // The three dated columns in the sheet, read from the stage dates first.
+  function sheetDate(card, key) {
+    const map = { briefPreparedDate: 'brief-prepared', creativeReadyDate: 'creative-ready', launchDate: 'published' };
+    return (card.stageDates && card.stageDates[map[key]]) || card[key] || '';
   }
 
   // Dates: the sheet uses "4 May 26"; the board stores ISO (YYYY-MM-DD).
@@ -236,7 +246,7 @@ window.JawdaData = (function () {
       const existing = byId[rawId];
       const card = existing || newCard(rawId, key);
       card.status = key;
-      ['angle', 'funnel', 'product', 'creativeType', 'formatType', 'ai', 'inspirationLink', 'description',
+      ['brief', 'angle', 'funnel', 'product', 'creativeType', 'formatType', 'ai', 'inspirationLink', 'description',
         'landingPage', 'primaryOne', 'primaryTwo', 'headlineOne', 'headlineTwo', 'canvaLandscape',
         'canvaSquare', 'learnings', 'owner', 'notes'].forEach(function (k) {
           const v = get(k); if (v) card[k] = v;
@@ -244,6 +254,10 @@ window.JawdaData = (function () {
       ['launchDate', 'briefPreparedDate', 'creativeReadyDate', 'dueDate'].forEach(function (k) {
         const v = parseDate(get(k)); if (v) card[k] = v;
       });
+      card.stageDates = card.stageDates || {};
+      if (card.briefPreparedDate && !card.stageDates['brief-prepared']) card.stageDates['brief-prepared'] = card.briefPreparedDate;
+      if (card.creativeReadyDate && !card.stageDates['creative-ready']) card.stageDates['creative-ready'] = card.creativeReadyDate;
+      if (card.launchDate && !card.stageDates['published']) card.stageDates['published'] = card.launchDate;
       // Keep a name or UTM from the sheet only if it differs from what the formula would build.
       const sheetName = get('name'); if (sheetName && sheetName !== buildName(Object.assign({}, card, { nameOverride: '' }))) card.nameOverride = sheetName;
       const sheetUtm = get('utm'); if (sheetUtm && sheetUtm !== buildUtm(Object.assign({}, card, { utmOverride: '' }))) card.utmOverride = sheetUtm;
@@ -276,8 +290,9 @@ window.JawdaData = (function () {
           case 'id': return csvCell('#' + c.id);
           case 'name': return csvCell(buildName(c));
           case 'utm': return csvCell(buildUtm(c));
-          case 'launchDate': case 'briefPreparedDate': case 'creativeReadyDate': case 'dueDate':
-            return csvCell(formatDate(c[f.key], 'sheet'));
+          case 'launchDate': case 'briefPreparedDate': case 'creativeReadyDate':
+            return csvCell(formatDate(sheetDate(c, f.key), 'sheet'));
+          case 'dueDate': return csvCell(formatDate(c[f.key], 'sheet'));
           default: return csvCell(c[f.key]);
         }
       }).join(','));
@@ -306,13 +321,14 @@ window.JawdaData = (function () {
       statuses: JSON.parse(JSON.stringify(DEFAULT_STATUSES)),
       options: JSON.parse(JSON.stringify(DEFAULT_OPTIONS)),
       team: DEFAULT_TEAM.slice(),
-      collapsed: {}
+      collapsed: {},
+      shoots: []
     };
   }
 
   return {
     DEFAULT_STATUSES: DEFAULT_STATUSES, DEFAULT_OPTIONS: DEFAULT_OPTIONS, DEFAULT_TEAM: DEFAULT_TEAM,
-    CHECKLIST: CHECKLIST, LIMITS: LIMITS, FIELDS: FIELDS,
+    CHECKLIST: CHECKLIST, LIMITS: LIMITS, FIELDS: FIELDS, FIRST_ID: FIRST_ID, sheetDate: sheetDate,
     newCard: newCard, buildName: buildName, buildUtm: buildUtm, slug: slug, nextId: nextId,
     parseDate: parseDate, formatDate: formatDate, parseCsv: parseCsv, importCsv: importCsv,
     exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings

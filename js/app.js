@@ -7,7 +7,7 @@
 
   const store = window.JawdaStorage.create();
   let state = { cards: [], settings: D.defaultSettings() };
-  let filters = { q: '', angle: '', funnel: '', formatType: '', creativeType: '', owner: '' };
+  let filters = { q: '', angle: '', funnel: '', formatType: '', creativeType: '' };
   let openId = null;
   let dragId = null;
   const saveTimers = {};
@@ -68,10 +68,9 @@
     if (filters.funnel && card.funnel !== filters.funnel) return false;
     if (filters.formatType && card.formatType !== filters.formatType) return false;
     if (filters.creativeType && card.creativeType !== filters.creativeType) return false;
-    if (filters.owner && card.owner !== filters.owner) return false;
     if (filters.q) {
       const q = filters.q.toLowerCase();
-      const hay = [card.id, D.buildName(card), card.description, card.product, card.primaryOne, card.primaryTwo, card.headlineOne, card.headlineTwo, card.owner, card.learnings, card.notes].join(' ').toLowerCase();
+      const hay = [card.id, D.buildName(card), card.brief, card.description, card.product, card.primaryOne, card.primaryTwo, card.headlineOne, card.headlineTwo, card.learnings, card.notes].join(' ').toLowerCase();
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
@@ -87,8 +86,7 @@
     fillFilter('fFunnel', ['Upper', 'Mid', 'Lower'].filter(function (v) { return used('funnel').indexOf(v) >= 0; }).concat(used('funnel').filter(function (v) { return ['Upper', 'Mid', 'Lower'].indexOf(v) < 0; })), filters.funnel);
     fillFilter('fFormat', used('formatType'), filters.formatType);
     fillFilter('fType', used('creativeType'), filters.creativeType);
-    fillFilter('fOwner', used('owner'), filters.owner);
-    const any = filters.angle || filters.funnel || filters.formatType || filters.creativeType || filters.owner || filters.q;
+    const any = filters.angle || filters.funnel || filters.formatType || filters.creativeType || filters.q;
     $('clearFilters').hidden = !any;
   }
 
@@ -102,7 +100,7 @@
         '<p>Import the SILIBI Meta Ads Max Vol. 3 tab as a CSV to bring every ad ID across with its copy and status, or start fresh with a new ticket.</p>' +
         '<div class="row"><button class="btn primary" id="emptyImport">Import from sheet</button><button class="btn" id="emptyNew">New ticket</button></div></div>';
       $('emptyImport').onclick = openImport; $('emptyNew').onclick = function () { createCard('backlog'); };
-      $('boardSummary').textContent = 'No tickets yet';
+      $('boardSummary').textContent = 'No tickets yet' + nextShootText();
       $('filterCount').textContent = '';
       return;
     }
@@ -130,7 +128,7 @@
       board.appendChild(col);
     });
     const pub = state.cards.filter(function (c) { return c.status === 'published'; }).length;
-    $('boardSummary').textContent = state.cards.length + ' tickets, ' + pub + ' published';
+    $('boardSummary').textContent = state.cards.length + ' tickets, ' + pub + ' published' + nextShootText();
     $('filterCount').textContent = shown !== state.cards.length ? shown + ' of ' + state.cards.length + ' shown' : '';
   }
 
@@ -139,19 +137,17 @@
     el.className = 'card'; el.draggable = true; el.dataset.id = c.id; el.tabIndex = 0;
     const name = D.buildName(c).replace(/^#\d+:?\s*/, '');
     const warn = D.claimWarnings(c).length;
-    const done = progress(c);
-    const late = c.dueDate && c.dueDate < today() && c.status !== 'published' && c.status !== 'rejected' && c.status !== 'retired';
-    const dateShown = c.launchDate ? 'Launch ' + D.formatDate(c.launchDate) : (c.dueDate ? '' : '');
+    const launch = D.sheetDate(c, 'launchDate');
+    const entered = c.stageDates && c.stageDates[c.status];
+    const dateShown = launch ? 'Launched ' + D.formatDate(launch) : (entered ? 'Since ' + D.formatDate(entered) : '');
     el.innerHTML =
       '<p class="id">#' + esc(c.id) + '<span class="date">' + esc(dateShown) + '</span></p>' +
       '<p class="name">' + (name ? esc(name) : '<i style="color:var(--muted)">No details yet</i>') + '</p>' +
       (c.description ? '<p class="desc">' + esc(c.description) + '</p>' : '') +
       '<div class="chips">' + [c.funnel, c.formatType].filter(Boolean).map(function (v) { return '<span class="chip">' + esc(v) + '</span>'; }).join('') +
       (c.ai ? '<span class="chip ai">' + esc(c.ai) + '</span>' : '') + '</div>' +
-      '<div class="foot">' + (c.owner ? '<span class="avatar" title="' + esc(c.owner) + '">' + esc(initials(c.owner)) + '</span>' : '<span class="avatar none" title="Unassigned">?</span>') +
-      (c.dueDate ? '<span class="due' + (late ? ' late' : '') + '">' + (late ? 'Overdue ' : 'Due ') + esc(D.formatDate(c.dueDate)) + '</span>' : '') +
-      (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') +
-      '<span class="rail" title="' + done + ' of ' + D.CHECKLIST.length + ' steps done">' + D.CHECKLIST.map(function (s) { return '<i class="' + (c.checklist[s.key] ? 'on' : '') + '"></i>'; }).join('') + '</span></div>' +
+      ((c.comments.length || c.brief) ? '<div class="foot">' + (c.brief ? '<span class="comments-n">Briefed</span>' : '') +
+      (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') + '</div>' : '') +
       (warn ? '<span class="flag" title="Copy contains claims to check">&#9888;</span>' : '');
     el.onclick = function () { openCard(c.id); };
     el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(c.id); } };
@@ -178,9 +174,8 @@
     if (card.status !== statusKey) {
       log(card, 'Moved from ' + statusLabel(card.status) + ' to ' + statusLabel(statusKey));
       card.status = statusKey;
-      if (statusKey === 'published' && !card.launchDate) card.launchDate = today();
-      if (statusKey === 'brief-prepared' && !card.briefPreparedDate) card.briefPreparedDate = today();
-      if (statusKey === 'creative-ready' && !card.creativeReadyDate) card.creativeReadyDate = today();
+      card.stageDates = card.stageDates || {};
+      if (!card.stageDates[statusKey]) card.stageDates[statusKey] = today();
     }
     saveNow(card); renderBoard();
     if (openId === card.id) renderDrawer();
@@ -188,7 +183,7 @@
 
   function createCard(statusKey) {
     const card = D.newCard(D.nextId(state.cards), statusKey || 'backlog');
-    if (me) card.owner = me;
+    card.stageDates[card.status] = today();
     state.cards.push(card);
     saveNow(card); renderBoard(); openCard(card.id);
   }
@@ -197,10 +192,11 @@
   // notes and learnings start clean, since the new ad has to earn its own.
   function duplicateCard(src) {
     const card = D.newCard(D.nextId(state.cards), src.status);
-    ['angle', 'funnel', 'product', 'creativeType', 'formatType', 'ai', 'description', 'inspirationLink',
+    ['brief', 'angle', 'funnel', 'product', 'creativeType', 'formatType', 'ai', 'description', 'inspirationLink',
       'landingPage', 'primaryOne', 'primaryTwo', 'headlineOne', 'headlineTwo', 'canvaLandscape', 'canvaSquare',
-      'owner', 'notes'].forEach(function (k) { card[k] = src[k] || ''; });
+      'notes'].forEach(function (k) { card[k] = src[k] || ''; });
     card.order = (src.order || 0) + 1;
+    card.stageDates[card.status] = today();
     card.activity.push({ at: new Date().toISOString(), text: 'Duplicated from #' + src.id });
     log(src, 'Duplicated as #' + card.id);
     state.cards.push(card);
@@ -208,12 +204,29 @@
     toast('#' + src.id + ' duplicated as #' + card.id);
   }
 
+  // Changing an ID means a new row in shared storage, so the old one is removed.
+  function renameCard(card, rawId) {
+    const newId = String(rawId || '').replace(/\D/g, '');
+    if (!newId || newId === card.id) return false;
+    if (cardById(newId)) { toast('#' + newId + ' is already taken'); return false; }
+    const oldId = card.id;
+    card.id = newId;
+    log(card, 'ID changed from #' + oldId);
+    if (openId === oldId) openId = newId;
+    Promise.resolve(store.deleteCard(oldId, state)).then(function () { return saveNow(card); }).catch(function (e) { setSync(false, e.message); });
+    renderBoard(); toast('Now #' + newId);
+    return true;
+  }
+
   /* ---------- drawer ---------- */
   function openCard(id) { openId = id; renderDrawer(); $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden', 'false'); $('scrim').classList.add('open'); }
   function closeDrawer() { openId = null; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden', 'true'); $('scrim').classList.remove('open'); }
 
+  const SORTED_OPTIONS = ['product', 'angle'];      // listed A to Z
+  const CONFIRMED_OPTIONS = ['product', 'angle'];   // a new value must be confirmed before it joins the list
   function optionField(card, key, label, optKey, hint) {
-    const opts = state.settings.options[optKey] || [];
+    let opts = (state.settings.options[optKey] || []).slice();
+    if (SORTED_OPTIONS.indexOf(optKey) >= 0) opts.sort(function (a, b) { return a.localeCompare(b, 'en', { sensitivity: 'base' }); });
     const listId = 'dl-' + optKey;
     return '<div class="field combo"><label for="f-' + key + '">' + esc(label) + '</label>' +
       '<input id="f-' + key + '" data-key="' + key + '" list="' + listId + '" value="' + esc(card[key]) + '" placeholder="Choose or type" autocomplete="off">' +
@@ -247,7 +260,7 @@
     const name = D.buildName(card); const utm = D.buildUtm(card);
     const idx = statusIndex(card.status);
     $('drawerHead').innerHTML =
-      '<div class="ttl"><div class="big-id">#' + esc(card.id) + '</div>' +
+      '<div class="ttl"><div class="big-id"><span>#</span><input id="f-id" value="' + esc(card.id) + '" inputmode="numeric" aria-label="Ad ID" size="' + Math.max(4, card.id.length) + '"></div>' +
       '<p class="computed-name" id="computedName">' + esc(name) + '</p>' +
       '<div class="status-row"><label class="sr-only" for="f-status">Status</label><select id="f-status" class="status">' +
       statusList().map(function (s) { return '<option value="' + s.key + '"' + (s.key === card.status ? ' selected' : '') + '>' + esc(s.label) + '</option>'; }).join('') + '</select>' +
@@ -255,30 +268,23 @@
       '<button class="btn quiet" id="drawerClose" aria-label="Close">Close</button>';
 
     const warnings = D.claimWarnings(card);
+    const dateRows = statusList().filter(function (st) { return st.key !== 'backlog' && st.key !== 'rejected'; }).map(function (st) {
+      const v = (card.stageDates && card.stageDates[st.key]) || '';
+      return '<div class="field"><label for="sd-' + st.key + '">' + esc(st.label) + '</label><input id="sd-' + st.key + '" type="date" data-stage="' + st.key + '" value="' + esc(v) + '"></div>';
+    }).join('');
     $('drawerBody').innerHTML =
+      '<div class="section"><h3>Brief <span>Briefed by Alamin</span></h3><div class="grid">' +
+      textField(card, 'brief', 'Brief', { area: true, span: true, rows: 4, placeholder: 'The angle, the hook to test, the product and what the creative needs to show' }) +
+      textField(card, 'inspirationLink', 'Inspiration link', { type: 'url', span: true, placeholder: 'Motion, TikTok, Instagram or reference URL' }) +
+      '</div></div>' +
+
       '<div class="section"><h3>Ad definition <span>builds the ad name and UTM</span></h3><div class="grid">' +
       optionField(card, 'funnel', 'Funnel', 'funnel') + optionField(card, 'angle', 'Angle', 'angle') +
       optionField(card, 'product', 'Product', 'product') + optionField(card, 'creativeType', 'Creative type', 'creativeType') +
       optionField(card, 'formatType', 'Format type', 'formatType') + optionField(card, 'ai', 'AI or non-AI', 'ai') +
       textField(card, 'nameOverride', 'Name override', { span: true, placeholder: 'Leave blank to use the built name above', hint: 'The name follows the sheet formula: #ID: Funnel / Angle / Product / Creative type / Format / AI.' }) +
       textField(card, 'description', 'Description', { area: true, span: true, rows: 2, placeholder: 'What the creative shows, in one or two lines' }) +
-      textField(card, 'inspirationLink', 'Inspiration link', { type: 'url', span: true, placeholder: 'Motion, TikTok, Instagram or reference URL' }) +
       '</div></div>' +
-
-      '<div class="section"><h3>Who and when</h3><div class="grid">' +
-      selectField(card, 'owner', 'Owner', state.settings.team) +
-      textField(card, 'dueDate', 'Due date', { type: 'date' }) +
-      textField(card, 'briefPreparedDate', 'Brief prepared', { type: 'date' }) +
-      textField(card, 'creativeReadyDate', 'Creative ready', { type: 'date' }) +
-      textField(card, 'launchDate', 'Launch date', { type: 'date' }) +
-      '</div></div>' +
-
-      '<div class="section"><h3>Copy <span>counters show the safe length before Meta truncates</span></h3><div class="grid">' +
-      textField(card, 'primaryOne', 'Primary text one', { area: true, span: true, rows: 3, limit: D.LIMITS.primary, limitNote: 'Hook first, credential mid, tagline close' }) +
-      textField(card, 'primaryTwo', 'Primary text two', { area: true, span: true, rows: 3, limit: D.LIMITS.primary }) +
-      textField(card, 'headlineOne', 'Headline one', { limit: D.LIMITS.headline }) +
-      textField(card, 'headlineTwo', 'Headline two', { limit: D.LIMITS.headline }) +
-      '</div>' + (warnings.length ? '<h3 style="margin-top:12px">Check before it runs</h3><ul class="warnings" id="warnings">' + warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '<div id="warnings"></div>') + '</div>' +
 
       '<div class="section"><h3>Links</h3><div class="grid">' +
       textField(card, 'landingPage', 'Landing page', { type: 'url', span: true, placeholder: 'https://jawda.co.uk/...' }) +
@@ -289,9 +295,12 @@
       textField(card, 'canvaSquare', 'Canva 1080 x 1080', { type: 'url', copy: true }) +
       '</div></div>' +
 
-      '<div class="section"><h3>Hand-offs <span>' + progress(card) + ' of ' + D.CHECKLIST.length + '</span></h3><div class="checklist">' +
-      D.CHECKLIST.map(function (s) { return '<label class="' + (card.checklist[s.key] ? 'on' : '') + '"><input type="checkbox" data-check="' + s.key + '"' + (card.checklist[s.key] ? ' checked' : '') + '>' + esc(s.label) + '</label>'; }).join('') +
-      '</div></div>' +
+      '<div class="section"><h3>Copy <span>counters show the safe length before Meta truncates</span></h3><div class="grid">' +
+      textField(card, 'primaryOne', 'Primary text one', { area: true, span: true, rows: 3, limit: D.LIMITS.primary, limitNote: 'Hook first, credential mid, tagline close' }) +
+      textField(card, 'primaryTwo', 'Primary text two', { area: true, span: true, rows: 3, limit: D.LIMITS.primary }) +
+      textField(card, 'headlineOne', 'Headline one', { limit: D.LIMITS.headline }) +
+      textField(card, 'headlineTwo', 'Headline two', { limit: D.LIMITS.headline }) +
+      '</div>' + (warnings.length ? '<h3 style="margin-top:12px">Check before it runs</h3><ul class="warnings" id="warnings">' + warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '<div id="warnings"></div>') + '</div>' +
 
       '<div class="section"><h3>Learnings <span>fill in once it has run</span></h3>' +
       textField(card, 'learnings', 'Learnings', { area: true, rows: 3, placeholder: 'What the numbers said, what to keep, what to change' }) +
@@ -302,7 +311,9 @@
       (card.comments.length ? card.comments.map(function (m, i) { return '<div class="msg"><button class="del" data-del="' + i + '" title="Delete note">Delete</button><div class="who"><b>' + esc(m.by || 'Someone') + '</b> ' + esc(relTime(m.at)) + '</div><p>' + esc(m.text) + '</p></div>'; }).join('') : '<p class="hint">No notes yet. Use this for feedback on copy or creative so it stays with the ticket.</p>') +
       '</div><div class="compose"><select id="meSel" title="Posting as">' + ['Me'].concat(state.settings.team).map(function (t) { const v = t === 'Me' ? '' : t; return '<option value="' + esc(v) + '"' + (v === me ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>' +
       '<textarea id="commentBox" placeholder="Add a note for the team"></textarea><button class="btn" id="postComment" type="button">Post</button></div>' +
-      '<details style="margin-top:12px"><summary>Activity</summary><ul class="activity">' + card.activity.slice().reverse().map(function (a) { return '<li><time>' + esc(relTime(a.at)) + '</time>' + esc(a.text) + '</li>'; }).join('') + '</ul></details></div>';
+      '<details style="margin-top:12px"><summary>Activity</summary><ul class="activity">' + card.activity.slice().reverse().map(function (a) { return '<li><time>' + esc(relTime(a.at)) + '</time>' + esc(a.text) + '</li>'; }).join('') + '</ul></details></div>' +
+
+      '<div class="section"><h3>Dates <span>filled in as the ticket moves through the pipeline</span></h3><div class="grid">' + dateRows + '</div></div>';
 
     $('drawerFoot').innerHTML =
       '<button class="btn danger quiet" id="deleteCard">Delete ticket</button><button class="btn quiet" id="dupCard">Duplicate</button><div class="spacer"></div>' +
@@ -314,6 +325,11 @@
 
   function bindDrawer(card) {
     $('drawerClose').onclick = closeDrawer;
+    $('f-id').onchange = function (e) { if (!renameCard(card, e.target.value)) e.target.value = card.id; else renderDrawer(); };
+    $('f-id').onkeydown = function (e) { if (e.key === 'Enter') e.target.blur(); };
+    $('drawerBody').querySelectorAll('[data-stage]').forEach(function (inp) {
+      inp.onchange = function () { card.stageDates = card.stageDates || {}; card.stageDates[inp.dataset.stage] = inp.value; saveNow(card); renderBoardQuiet(); };
+    });
     $('f-status').onchange = function (e) { moveCard(card, e.target.value); };
     $('movePrev').onclick = function () { const i = statusIndex(card.status); if (i > 0) moveCard(card, statusList()[i - 1].key); };
     $('moveNext').onclick = function () { const i = statusIndex(card.status); if (i < statusList().length - 1) moveCard(card, statusList()[i + 1].key); };
@@ -325,16 +341,18 @@
       closeDrawer(); renderBoard(); toast('Deleted #' + card.id);
     };
     const nameKeys = ['funnel', 'angle', 'product', 'creativeType', 'formatType', 'ai', 'nameOverride', 'landingPage', 'utmOverride'];
+    const refreshName = function () {
+      $('computedName').textContent = D.buildName(card);
+      const utm = D.buildUtm(card);
+      $('utmOut').innerHTML = utm ? esc(utm) : '<span style="color:var(--muted)">Add a landing page and the link builds itself</span>';
+      $('copyUtm').disabled = !utm;
+    };
     $('drawerBody').querySelectorAll('[data-key]').forEach(function (inp) {
       const key = inp.dataset.key;
+      if (CONFIRMED_OPTIONS.indexOf(key) >= 0) { bindConfirmedOption(card, inp, key, refreshName); return; }
       const update = function () {
         card[key] = inp.value;
-        if (nameKeys.indexOf(key) >= 0) {
-          $('computedName').textContent = D.buildName(card);
-          const utm = D.buildUtm(card);
-          $('utmOut').innerHTML = utm ? esc(utm) : '<span style="color:var(--muted)">Add a landing page and the link builds itself</span>';
-          $('copyUtm').disabled = !utm;
-        }
+        if (nameKeys.indexOf(key) >= 0) refreshName();
         if (['primaryOne', 'primaryTwo', 'headlineOne', 'headlineTwo'].indexOf(key) >= 0) {
           const ws = D.claimWarnings(card); const w = $('warnings');
           if (w) { w.innerHTML = ws.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); w.className = ws.length ? 'warnings' : ''; }
@@ -348,15 +366,6 @@
         const upd = function () { const n = inp.value.length; const lim = parseInt(len.dataset.limit, 10); len.textContent = n + ' / ' + lim; len.className = 'len' + (n > lim ? ' over' : ''); };
         inp.addEventListener('input', upd); upd();
       }
-    });
-    $('drawerBody').querySelectorAll('[data-check]').forEach(function (cb) {
-      cb.onchange = function () {
-        card.checklist[cb.dataset.check] = cb.checked;
-        cb.parentElement.classList.toggle('on', cb.checked);
-        log(card, (cb.checked ? 'Ticked ' : 'Unticked ') + D.CHECKLIST.find(function (s) { return s.key === cb.dataset.check; }).label);
-        $('drawerBody').querySelector('.section h3 span') && renderProgressLabel(card);
-        saveNow(card); renderBoardQuiet();
-      };
     });
     $('drawerBody').querySelectorAll('.copy-btn').forEach(function (b) {
       b.onclick = function () { const v = card[b.dataset.copy]; if (v) navigator.clipboard.writeText(v).then(function () { toast('Copied'); }); };
@@ -375,9 +384,33 @@
       b.onclick = function () { card.comments.splice(parseInt(b.dataset.del, 10), 1); saveNow(card); renderDrawer(); renderBoardQuiet(); };
     });
   }
-  function renderProgressLabel(card) {
-    const h = Array.from($('drawerBody').querySelectorAll('.section h3')).find(function (h) { return /Hand-offs/.test(h.textContent); });
-    if (h) h.querySelector('span').textContent = progress(card) + ' of ' + D.CHECKLIST.length;
+  // Product and Angle: an existing value (any casing) is used as listed; a new one
+  // is held back until someone confirms it should join the dropdown.
+  function bindConfirmedOption(card, inp, key, refreshName) {
+    const label = inp.previousElementSibling ? inp.previousElementSibling.textContent : key;
+    const list = state.settings.options[key];
+    const field = inp.parentElement;
+    const clearStrip = function () { const old = field.querySelector('.confirm-new'); if (old) old.remove(); inp.classList.remove('pending'); };
+    const commit = function (v) { card[key] = v; inp.value = v; refreshName(); queueSave(card); renderBoardQuiet(); };
+    inp.addEventListener('change', function () {
+      const raw = inp.value.trim();
+      const hit = list.find(function (o) { return o.toLowerCase() === raw.toLowerCase(); });
+      clearStrip();
+      if (!raw || hit) { commit(hit || ''); return; }
+      inp.classList.add('pending');
+      const strip = document.createElement('div');
+      strip.className = 'confirm-new';
+      strip.innerHTML = '<span>&ldquo;' + esc(raw) + '&rdquo; is not in the ' + esc(label) + ' list yet.</span>' +
+        '<button type="button" class="btn small primary" data-add>Add to list</button><button type="button" class="btn small" data-cancel>Cancel</button>';
+      field.appendChild(strip);
+      strip.querySelector('[data-add]').onclick = function () {
+        list.push(raw); saveSettings(); clearStrip(); commit(raw);
+        const dl = $('dl-' + key); if (dl) { const o = document.createElement('option'); o.value = raw; dl.appendChild(o); }
+        toast('Added \u201c' + raw + '\u201d to ' + label);
+      };
+      strip.querySelector('[data-cancel]').onclick = function () { clearStrip(); inp.value = card[key] || ''; };
+      strip.querySelector('[data-add]').focus();
+    });
   }
   function learnOption(key, value) {
     const map = { angle: 'angle', funnel: 'funnel', product: 'product', creativeType: 'creativeType', formatType: 'formatType', ai: 'ai' };
@@ -456,6 +489,64 @@
     };
   }
 
+  /* ---------- shoots ---------- */
+  // Upcoming shoots live in board settings, so the whole team sees the same list.
+  function shoots() { return state.settings.shoots || (state.settings.shoots = []); }
+  function upcomingShoots() { const t = today(); return shoots().filter(function (x) { return x.date >= t; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
+  function nextShootText() {
+    const n = upcomingShoots()[0]; if (!n) return '';
+    return '. Next shoot ' + D.formatDate(n.date) + (n.source ? ', ' + n.source : '');
+  }
+  function openShoots(editId) {
+    const t = today();
+    const list = shoots().slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    const up = list.filter(function (x) { return x.date >= t; }).reverse();
+    const past = list.filter(function (x) { return x.date < t; });
+    const editing = editId ? shoots().find(function (x) { return x.id === editId; }) : null;
+    const sources = (state.settings.options.creativeType || []).concat(['SILIBI studio', 'Egypt agency', 'Factory / People of Jawda']).filter(function (v, i, a) { return a.indexOf(v) === i; });
+    const row = function (x) {
+      const d = new Date(x.date + 'T00:00:00'); const days = Math.round((d - new Date(t + 'T00:00:00')) / 86400000);
+      const when = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : days > 1 ? 'In ' + days + ' days' : '';
+      return '<div class="shoot' + (x.date < t ? ' past' : '') + '" data-id="' + esc(x.id) + '">' +
+        '<div class="shoot-date"><b>' + esc(D.formatDate(x.date)) + '</b><span>' + esc(when) + '</span></div>' +
+        '<div class="shoot-body"><div class="shoot-title">' + esc(x.title || 'Shoot') + (x.source ? ' <span class="chip">' + esc(x.source) + '</span>' : '') + '</div>' +
+        (x.notes ? '<p>' + esc(x.notes) + '</p>' : '') +
+        (x.link ? '<a href="' + esc(x.link) + '" target="_blank" rel="noopener">' + esc(x.link.replace(/^https?:\/\//, '').slice(0, 60)) + '</a>' : '') + '</div>' +
+        '<div class="shoot-actions"><button class="btn small" data-edit="' + esc(x.id) + '">Edit</button><button class="btn small quiet danger" data-rm="' + esc(x.id) + '">Remove</button></div></div>';
+    };
+    openModal('Shoots',
+      '<div class="section" style="margin-bottom:14px"><h3>' + (editing ? 'Edit shoot' : 'Add a shoot') + '</h3><div class="grid">' +
+      '<div class="field"><label for="sh-date">Date</label><input id="sh-date" type="date" value="' + esc(editing ? editing.date : '') + '"></div>' +
+      '<div class="field"><label for="sh-source">Source of content</label><input id="sh-source" list="dl-shoot-source" placeholder="Studio, Lifestyle, Influencer / UGC" value="' + esc(editing ? editing.source : '') + '" autocomplete="off"><datalist id="dl-shoot-source">' + sources.map(function (o) { return '<option value="' + esc(o) + '">'; }).join('') + '</datalist></div>' +
+      '<div class="field span"><label for="sh-title">What is being shot</label><input id="sh-title" placeholder="AW26 part 2, five pieces, model and flat lay" value="' + esc(editing ? editing.title : '') + '"></div>' +
+      '<div class="field span"><label for="sh-link">Link</label><input id="sh-link" type="url" placeholder="Shot list, brief, Drive folder or calendar invite" value="' + esc(editing ? editing.link : '') + '"></div>' +
+      '<div class="field span"><label for="sh-notes">Notes</label><textarea id="sh-notes" rows="2" placeholder="Location, who is going, what needs to be ready beforehand">' + esc(editing ? editing.notes : '') + '</textarea></div>' +
+      '</div><div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">' + (editing ? '<button class="btn" id="sh-cancel">Cancel</button>' : '') + '<button class="btn primary" id="sh-save">' + (editing ? 'Save changes' : 'Add shoot') + '</button></div></div>' +
+      '<h3 class="shoots-h">Upcoming <span>' + up.length + '</span></h3>' +
+      (up.length ? up.map(row).join('') : '<p class="hint">Nothing booked. Add the next one above so the team can plan copy and briefs around it.</p>') +
+      (past.length ? '<details style="margin-top:14px"><summary>Past shoots (' + past.length + ')</summary>' + past.map(row).join('') + '</details>' : ''));
+    const c = $('modalContent');
+    $('sh-save').onclick = function () {
+      const date = $('sh-date').value; if (!date) { $('sh-date').focus(); toast('Add a date'); return; }
+      const entry = editing || { id: 'shoot-' + Date.now().toString(36), createdBy: me };
+      entry.date = date; entry.source = $('sh-source').value.trim(); entry.title = $('sh-title').value.trim();
+      entry.link = $('sh-link').value.trim(); entry.notes = $('sh-notes').value.trim();
+      if (!editing) shoots().push(entry);
+      saveSettings().then(function () { toast(editing ? 'Shoot updated' : 'Shoot added'); });
+      renderBoard(); openShoots();
+    };
+    if ($('sh-cancel')) $('sh-cancel').onclick = function () { openShoots(); };
+    c.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openShoots(b.dataset.edit); }; });
+    c.querySelectorAll('[data-rm]').forEach(function (b) {
+      b.onclick = function () {
+        if (!confirm('Remove this shoot?')) return;
+        state.settings.shoots = shoots().filter(function (x) { return x.id !== b.dataset.rm; });
+        saveSettings(); renderBoard(); openShoots();
+      };
+    });
+    $('sh-date').focus();
+  }
+
   /* ---------- modal: import ---------- */
   function openImport() {
     openModal('Import from sheet',
@@ -482,6 +573,7 @@
   function bindGlobal() {
     $('newBtn').onclick = function () { createCard('backlog'); };
     $('settingsBtn').onclick = openSettings;
+    $('shootsBtn').onclick = openShoots;
     $('modalClose').onclick = closeModal;
     $('modal').onclick = function (e) { if (e.target === $('modal')) closeModal(); };
     $('scrim').onclick = closeDrawer;
@@ -490,10 +582,10 @@
     });
     $('boardName').onchange = function (e) { state.settings.boardName = e.target.value.trim() || 'Board'; saveSettings(); };
     $('search').oninput = function (e) { filters.q = e.target.value.trim(); renderBoard(); };
-    [['fAngle', 'angle'], ['fFunnel', 'funnel'], ['fFormat', 'formatType'], ['fType', 'creativeType'], ['fOwner', 'owner']].forEach(function (p) {
+    [['fAngle', 'angle'], ['fFunnel', 'funnel'], ['fFormat', 'formatType'], ['fType', 'creativeType']].forEach(function (p) {
       $(p[0]).onchange = function (e) { filters[p[1]] = e.target.value; renderBoard(); };
     });
-    $('clearFilters').onclick = function () { filters = { q: '', angle: '', funnel: '', formatType: '', creativeType: '', owner: '' }; $('search').value = ''; renderBoard(); };
+    $('clearFilters').onclick = function () { filters = { q: '', angle: '', funnel: '', formatType: '', creativeType: '' }; $('search').value = ''; renderBoard(); };
 
     const menuBtn = $('dataMenuBtn'), menu = $('dataMenu');
     menuBtn.onclick = function (e) { e.stopPropagation(); menu.classList.toggle('open'); menuBtn.setAttribute('aria-expanded', menu.classList.contains('open')); };
@@ -536,6 +628,10 @@
     const base = D.newCard(c.id || '0', c.status || 'backlog');
     const out = Object.assign(base, c);
     out.checklist = Object.assign(base.checklist, c.checklist || {});
+    out.stageDates = Object.assign({}, c.stageDates || {});
+    if (!out.stageDates['brief-prepared'] && c.briefPreparedDate) out.stageDates['brief-prepared'] = c.briefPreparedDate;
+    if (!out.stageDates['creative-ready'] && c.creativeReadyDate) out.stageDates['creative-ready'] = c.creativeReadyDate;
+    if (!out.stageDates['published'] && c.launchDate) out.stageDates['published'] = c.launchDate;
     out.comments = Array.isArray(c.comments) ? c.comments : [];
     out.activity = Array.isArray(c.activity) ? c.activity : base.activity;
     return out;
@@ -546,6 +642,7 @@
     if (data && Array.isArray(data.cards)) state.cards = data.cards.map(normalise);
     if (data && data.settings) state.settings = Object.assign(D.defaultSettings(), data.settings);
     if (!state.settings.collapsed) state.settings.collapsed = {};
+    if (!Array.isArray(state.settings.shoots)) state.settings.shoots = [];
     $('boardName').value = state.settings.boardName || 'Board';
   }
   function boot() {

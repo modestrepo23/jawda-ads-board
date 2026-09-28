@@ -171,7 +171,10 @@ a { color: var(--umber); }
 .drawer.open { transform: none; }
 @media (prefers-reduced-motion: reduce) { .drawer, .scrim { transition: none; } }
 .drawer-head { display: flex; align-items: flex-start; gap: 12px; padding: 20px 26px 14px; background: var(--desert); border-bottom: 1px solid var(--eagle); }
-.drawer-head .big-id { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 38px; color: var(--umber); line-height: 1; }
+.drawer-head .big-id { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 38px; color: var(--umber); line-height: 1; display: flex; align-items: baseline; }
+.drawer-head .big-id input { font: inherit; color: inherit; border: 0; border-bottom: 1px dashed transparent; background: transparent; padding: 0; width: auto; max-width: 5ch; }
+.drawer-head .big-id input:hover { border-bottom-color: var(--eagle); }
+.drawer-head .big-id input:focus { outline: none; border-bottom-color: var(--umber); }
 .drawer-head .ttl { flex: 1; min-width: 0; }
 .drawer-head .computed-name { margin: 8px 0 0; font-size: 13px; color: var(--suede); word-break: break-word; }
 .drawer-head .status-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
@@ -231,6 +234,7 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--suede); }
 .modal .box header h2 { margin: 0; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 26px; flex: 1; }
 .modal .box .content { padding: 16px 22px 24px; }
 .modal textarea { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.modal .field textarea { font-family: inherit; font-size: inherit; min-height: 64px; }
 .list-edit { display: flex; flex-direction: column; gap: 6px; }
 .list-edit .row { display: flex; gap: 6px; align-items: center; }
 .list-edit .row input { flex: 1; border: 1px solid var(--eagle); border-radius: 6px; padding: 6px 9px; background: #fff; }
@@ -243,6 +247,26 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--suede); }
 .pane.on { display: block; }
 .note { background: var(--desert); border-radius: 6px; padding: 10px 12px; font-size: 13px; color: var(--suede); margin-bottom: 12px; }
 .note code { background: var(--pearl); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+/* Confirming a new dropdown value */
+.field input.pending { border-color: var(--umber); background: #FBF4F0; }
+.confirm-new { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; padding: 8px 10px; background: var(--pearl); border-left: 3px solid var(--umber); font-size: 13px; }
+.confirm-new span { flex: 1; min-width: 160px; color: var(--suede); }
+
+/* Shoots */
+.shoots-h { margin: 0 0 8px; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 20px; }
+.shoots-h span { font-family: var(--sans); font-style: normal; font-size: 12px; color: var(--ash); margin-left: 8px; }
+.shoot { display: flex; gap: 14px; background: var(--desert); border-radius: 6px; padding: 12px 14px; margin-bottom: 8px; align-items: flex-start; }
+.shoot.past { opacity: 0.7; }
+.shoot-date { flex: 0 0 84px; display: flex; flex-direction: column; }
+.shoot-date b { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 18px; color: var(--umber); line-height: 1.1; }
+.shoot-date span { font-size: 11px; color: var(--ash); margin-top: 3px; }
+.shoot-body { flex: 1; min-width: 0; }
+.shoot-title { font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.shoot-body p { margin: 4px 0 0; font-size: 13px; color: var(--suede); white-space: pre-wrap; }
+.shoot-body a { display: inline-block; margin-top: 4px; font-size: 12px; word-break: break-all; }
+.shoot-actions { display: flex; gap: 4px; flex: none; }
+@media (max-width: 620px) { .shoot { flex-wrap: wrap; } .shoot-actions { width: 100%; justify-content: flex-end; } }
 
 /* Toast */
 .toast { position: fixed; left: 50%; top: 72px; transform: translateX(-50%) translateY(-12px); background: var(--umber); color: var(--desert); padding: 10px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity 160ms, transform 160ms; z-index: 40; pointer-events: none; max-width: 90vw; }
@@ -267,7 +291,7 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--suede); }
   .drawer-head .big-id { font-size: 30px; }
   .drawer-foot { flex-wrap: wrap; }
   .drawer-foot .spacer { display: none; }
-  .drawer-foot .btn.danger { order: 3; width: 100%; justify-content: center; }
+  .drawer-foot .btn.danger, .drawer-foot #dupCard { order: 3; flex: 1 1 45%; justify-content: center; }
   .drawer-foot .btn:not(.danger) { flex: 1; justify-content: center; }
   :root { --col-w: 82vw; }
 }
