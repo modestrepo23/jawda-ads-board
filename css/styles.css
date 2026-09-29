@@ -259,7 +259,6 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--suede); }
 .perf-mini td { text-align: right; padding: 1px 0; color: var(--crater); font-variant-numeric: tabular-nums; }
 .perf-mini td:first-child { color: var(--suede); font-weight: 500; }
 .perf-mini td i { font-style: normal; color: var(--ash); }
-.perf-mini .win { color: var(--ash); font-size: 10px; margin-top: 3px; }
 
 /* Sort controls in a column header */
 .sortbar { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; margin-top: 8px; font-size: 11px; color: var(--cream-soft); }
