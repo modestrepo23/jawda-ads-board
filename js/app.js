@@ -145,7 +145,8 @@
       '<p class="name">' + (name ? esc(name) : '<i style="color:var(--muted)">No details yet</i>') + '</p>' +
       (c.description ? '<p class="desc">' + esc(c.description) + '</p>' : '') +
       '<div class="chips">' + [c.funnel, c.formatType].filter(Boolean).map(function (v) { return '<span class="chip">' + esc(v) + '</span>'; }).join('') +
-      (c.ai ? '<span class="chip ai">' + esc(c.ai) + '</span>' : '') + '</div>' +
+      (c.ai ? '<span class="chip ai">' + esc(c.ai) + '</span>' : '') +
+      ((c.canvaLandscape || c.canvaSquare) ? '<span class="chip canva">Canva</span>' : '') + '</div>' +
       ((c.comments.length || c.brief) ? '<div class="foot">' + (c.brief ? '<span class="comments-n">Briefed</span>' : '') +
       (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') + '</div>' : '') +
       (warn ? '<span class="flag" title="Copy contains claims to check">&#9888;</span>' : '');
@@ -172,7 +173,7 @@
 
   function moveCard(card, statusKey) {
     if (card.status !== statusKey) {
-      log(card, 'Moved from ' + statusLabel(card.status) + ' to ' + statusLabel(statusKey));
+      log(card, 'Moved from ' + statusLabel(card.status) + ' to ' + statusLabel(statusKey) + (me ? ' by ' + me : ''));
       card.status = statusKey;
       card.stageDates = card.stageDates || {};
       if (!card.stageDates[statusKey]) card.stageDates[statusKey] = today();
@@ -212,15 +213,29 @@
     const oldId = card.id;
     card.id = newId;
     log(card, 'ID changed from #' + oldId);
-    if (openId === oldId) openId = newId;
+    if (openId === oldId) { openId = newId; history.replaceState(null, '', '#' + newId); }
     Promise.resolve(store.deleteCard(oldId, state)).then(function () { return saveNow(card); }).catch(function (e) { setSync(false, e.message); });
     renderBoard(); toast('Now #' + newId);
     return true;
   }
 
   /* ---------- drawer ---------- */
-  function openCard(id) { openId = id; renderDrawer(); $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden', 'false'); $('scrim').classList.add('open'); }
-  function closeDrawer() { openId = null; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden', 'true'); $('scrim').classList.remove('open'); }
+  // The open ticket is mirrored in the address bar as #1142, so links from Slack
+  // (or a copied URL) open straight onto it.
+  function openCard(id) {
+    openId = id; renderDrawer();
+    $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden', 'false'); $('scrim').classList.add('open');
+    if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+  }
+  function closeDrawer() {
+    openId = null; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden', 'true'); $('scrim').classList.remove('open');
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  }
+  function openFromHash() {
+    const m = location.hash.match(/^#(\d+)$/);
+    if (m && cardById(m[1])) openCard(m[1]);
+    else if (m) toast('No ticket #' + m[1] + ' on this board');
+  }
 
   const SORTED_OPTIONS = ['product', 'angle'];      // listed A to Z
   const CONFIRMED_OPTIONS = ['product', 'angle'];   // a new value must be confirmed before it joins the list
@@ -255,6 +270,31 @@
       (card[key] && values.indexOf(card[key]) < 0 ? '<option selected>' + esc(card[key]) + '</option>' : '') + '</select></div>';
   }
 
+  // Creative previews: Canva designs embed directly; plain image links show as images.
+  function previewsHtml(card) {
+    const items = [['canvaLandscape', '1920 x 1080', '16 / 9'], ['canvaSquare', '1080 x 1080', '1 / 1']];
+    return items.map(function (it) {
+      const link = (card[it[0]] || '').trim(); if (!link) return '';
+      const embed = D.canvaEmbedUrl(link); const img = D.isImageUrl(link);
+      if (!embed && !img) return '';
+      return '<div class="preview" data-preview="' + it[0] + '"><div class="preview-head"><span>' + it[1] + '</span>' +
+        '<a href="' + esc(link) + '" target="_blank" rel="noopener">Open in ' + (embed ? 'Canva' : 'new tab') + '</a></div>' +
+        (img ? '<img class="preview-img" src="' + esc(link) + '" alt="" style="aspect-ratio:' + it[2] + '">'
+             : '<button type="button" class="preview-load" data-embed="' + esc(embed) + '" data-ratio="' + it[2] + '">Show preview</button>') +
+        '</div>';
+    }).join('') || '';
+  }
+  function bindPreviews(card) {
+    const box = $('previews'); if (!box) return;
+    box.querySelectorAll('.preview-load').forEach(function (b) {
+      b.onclick = function () {
+        const f = document.createElement('iframe');
+        f.src = b.dataset.embed; f.loading = 'lazy'; f.allowFullscreen = true; f.className = 'preview-frame';
+        f.style.aspectRatio = b.dataset.ratio; f.title = 'Canva preview';
+        b.replaceWith(f);
+      };
+    });
+  }
   function renderDrawer() {
     const card = cardById(openId); if (!card) { closeDrawer(); return; }
     const name = D.buildName(card); const utm = D.buildUtm(card);
@@ -293,7 +333,7 @@
       textField(card, 'utmOverride', 'UTM override', { span: true, placeholder: 'Only if the built link is wrong for this ad' }) +
       textField(card, 'canvaLandscape', 'Canva 1920 x 1080', { type: 'url', copy: true }) +
       textField(card, 'canvaSquare', 'Canva 1080 x 1080', { type: 'url', copy: true }) +
-      '</div></div>' +
+      '</div><div class="previews" id="previews">' + previewsHtml(card) + '</div></div>' +
 
       '<div class="section"><h3>Copy <span>counters show the safe length before Meta truncates</span></h3><div class="grid">' +
       textField(card, 'primaryOne', 'Primary text one', { area: true, span: true, rows: 3, limit: D.LIMITS.primary, limitNote: 'Hook first, credential mid, tagline close' }) +
@@ -371,6 +411,10 @@
       b.onclick = function () { const v = card[b.dataset.copy]; if (v) navigator.clipboard.writeText(v).then(function () { toast('Copied'); }); };
     });
     $('copyUtm').onclick = function () { const u = D.buildUtm(card); if (u) navigator.clipboard.writeText(u).then(function () { toast('UTM link copied'); }); };
+    bindPreviews(card);
+    ['canvaLandscape', 'canvaSquare'].forEach(function (k) {
+      const inp = $('f-' + k); if (inp) inp.addEventListener('change', function () { $('previews').innerHTML = previewsHtml(card); bindPreviews(card); });
+    });
     $('meSel').onchange = function (e) { me = e.target.value; localStorage.setItem('jawda-me', me); };
     $('postComment').onclick = function () {
       const box = $('commentBox'); const text = box.value.trim(); if (!text) return;
@@ -649,7 +693,8 @@
     bindGlobal();
     setSync(true);
     Promise.resolve(store.load()).then(function (data) {
-      applyLoaded(data); setSync(false); renderBoard();
+      applyLoaded(data); setSync(false); renderBoard(); openFromHash();
+      window.addEventListener('hashchange', openFromHash);
       store.subscribe(function () {
         // Another team member changed something: reload, but never over a field being edited.
         Promise.resolve(store.load()).then(function (fresh) {

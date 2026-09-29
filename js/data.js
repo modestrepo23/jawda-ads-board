@@ -315,6 +315,15 @@ window.JawdaData = (function () {
     return CLAIM_RULES.filter(function (r) { return r.re.test(text); }).map(function (r) { return r.note; });
   }
 
+  // Turns any Canva design link (edit or view) into its embeddable preview URL.
+  // Works when the design is shared as "Anyone with the link can view".
+  function canvaEmbedUrl(link) {
+    const m = String(link || '').match(/canva\.com\/design\/([A-Za-z0-9_-]+)(?:\/([A-Za-z0-9_-]+))?\/(?:view|edit)/);
+    if (!m) return '';
+    return 'https://www.canva.com/design/' + m[1] + (m[2] ? '/' + m[2] : '') + '/view?embed';
+  }
+  function isImageUrl(link) { return /^https?:\/\/\S+\.(png|jpe?g|gif|webp)(\?\S*)?$/i.test(String(link || '').trim()); }
+
   function defaultSettings() {
     return {
       boardName: 'SILIBI Meta Ads Max Vol. 3',
@@ -331,6 +340,7 @@ window.JawdaData = (function () {
     CHECKLIST: CHECKLIST, LIMITS: LIMITS, FIELDS: FIELDS, FIRST_ID: FIRST_ID, sheetDate: sheetDate,
     newCard: newCard, buildName: buildName, buildUtm: buildUtm, slug: slug, nextId: nextId,
     parseDate: parseDate, formatDate: formatDate, parseCsv: parseCsv, importCsv: importCsv,
-    exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings
+    exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings,
+    canvaEmbedUrl: canvaEmbedUrl, isImageUrl: isImageUrl
   };
 })();
