@@ -318,11 +318,83 @@ window.JawdaData = (function () {
   // Turns any Canva design link (edit or view) into its embeddable preview URL.
   // Works when the design is shared as "Anyone with the link can view".
   function canvaEmbedUrl(link) {
-    const m = String(link || '').match(/canva\.com\/design\/([A-Za-z0-9_-]+)(?:\/([A-Za-z0-9_-]+))?\/(?:view|edit)/);
+    // Accepts edit, view and watch (video) links, with or without the share token.
+    const m = String(link || '').match(/canva\.com\/design\/([A-Za-z0-9_-]+)(?:\/([A-Za-z0-9_-]{6,}))?(?:\/(?:view|edit|watch)|\/?(?:[?#]|$))/);
     if (!m) return '';
     return 'https://www.canva.com/design/' + m[1] + (m[2] ? '/' + m[2] : '') + '/view?embed';
   }
   function isImageUrl(link) { return /^https?:\/\/\S+\.(png|jpe?g|gif|webp)(\?\S*)?$/i.test(String(link || '').trim()); }
+
+  // Ad performance. One record per ticket ID, matched from the ad name's "#1139" prefix.
+  // Accepts an Ads Manager ad-level export (spend, ROAS, purchases, cost per purchase)
+  // or a Triple Whale export (adds NC-CPA). Columns are found by name, so extra columns
+  // are ignored and the order does not matter.
+  const METRIC_COLUMNS = {
+    name: [/^ad name$/i, /^ad$/i, /^name$/i],
+    adId: [/^ad id$/i],
+    spend: [/^amount spent/i, /^spend$/i, /^ad spend/i, /^cost$/i],
+    roas: [/^purchase roas/i, /^roas$/i, /website purchase roas/i],
+    purchases: [/^purchases$/i, /^orders$/i, /^conversions$/i, /^website purchases$/i],
+    cpa: [/^cost per purchase/i, /^cpa$/i, /^cost per order/i],
+    ncCpa: [/^nc[\s-]?cpa/i, /new customer cpa/i, /cost per new customer/i, /^ncpa$/i],
+    ncPurchases: [/^new customer(s| orders| purchases)?$/i, /^nc orders$/i],
+    from: [/^reporting starts$/i, /^start( date)?$/i, /^date start$/i],
+    to: [/^reporting ends$/i, /^end( date)?$/i, /^date stop$/i]
+  };
+  function num(v) { v = String(v == null ? '' : v).replace(/[£$,\s]/g, '').replace(/x$/i, ''); if (v === '' || v === '-') return null; const n = parseFloat(v); return isNaN(n) ? null : n; }
+  function importMetrics(text, state, source) {
+    const rows = parseCsv(text);
+    const hi = rows.findIndex(function (r) { return r.some(function (c) { return METRIC_COLUMNS.name.some(function (re) { return re.test(c.trim()); }); }); });
+    if (hi < 0) throw new Error('Could not find an "Ad name" column.');
+    const header = rows[hi].map(function (h) { return h.trim(); });
+    const col = {};
+    Object.keys(METRIC_COLUMNS).forEach(function (k) {
+      const i = header.findIndex(function (h) { return METRIC_COLUMNS[k].some(function (re) { return re.test(h); }); });
+      if (i >= 0) col[k] = i;
+    });
+    if (col.spend === undefined && col.roas === undefined && col.ncCpa === undefined) throw new Error('No spend, ROAS or NC-CPA column found.');
+    const ids = {}; state.cards.forEach(function (c) { ids[c.id] = true; });
+    state.metrics = state.metrics || {};
+    const now = new Date().toISOString();
+    const res = { matched: 0, unmatched: [], window: '' };
+    const acc = {};
+    for (let r = hi + 1; r < rows.length; r++) {
+      const row = rows[r]; const name = (row[col.name] || '').trim();
+      const m = name.match(/^#?\s*(\d{3,5})\b/); if (!m) { if (name) res.unmatched.push(name); continue; }
+      const id = m[1]; if (!ids[id]) { res.unmatched.push(name); continue; }
+      const get = function (k) { return col[k] === undefined ? null : num(row[col[k]]); };
+      // Several rows can share an ID (one per ad set or day): sum spend and purchases, recompute rates.
+      const a = acc[id] || (acc[id] = { spend: 0, purchases: 0, revenue: 0, ncPurchases: 0, rows: 0, roasRows: 0, ncCpaRows: [], from: '', to: '', adId: '' });
+      const spend = get('spend') || 0, roas = get('roas'), purchases = get('purchases') || 0;
+      a.spend += spend; a.purchases += purchases; a.rows++;
+      if (roas !== null) { a.revenue += roas * spend; a.roasRows++; }
+      const nc = get('ncCpa'); if (nc !== null) a.ncCpaRows.push({ cpa: nc, spend: spend });
+      a.ncPurchases += get('ncPurchases') || 0;
+      if (col.adId !== undefined && row[col.adId]) a.adId = String(row[col.adId]).trim();
+      const f = col.from !== undefined ? parseDate(row[col.from]) : ''; const t = col.to !== undefined ? parseDate(row[col.to]) : '';
+      if (f && (!a.from || f < a.from)) a.from = f; if (t && (!a.to || t > a.to)) a.to = t;
+    }
+    Object.keys(acc).forEach(function (id) {
+      const a = acc[id];
+      const prev = state.metrics[id] || {};
+      // Only overwrite what this file actually reports, so a Triple Whale file adds NC-CPA
+      // without wiping the purchases that came from Ads Manager.
+      const out = Object.assign({}, prev, { from: a.from || prev.from || '', to: a.to || prev.to || '', adId: a.adId || prev.adId || '', source: source || 'csv', updatedAt: now });
+      if (col.spend !== undefined) out.spend = a.spend;
+      if (col.purchases !== undefined) out.purchases = a.purchases;
+      if (col.roas !== undefined) out.roas = a.roasRows ? (a.spend ? a.revenue / a.spend : null) : (prev.roas != null ? prev.roas : null);
+      if (col.purchases !== undefined || col.cpa !== undefined) out.cpa = (out.purchases && out.spend != null) ? out.spend / out.purchases : null;
+      if (a.ncCpaRows.length) {
+        const w = a.ncCpaRows.reduce(function (t, x) { return t + x.spend; }, 0);
+        out.ncCpa = w ? a.ncCpaRows.reduce(function (t, x) { return t + x.cpa * x.spend; }, 0) / w : a.ncCpaRows[0].cpa;
+      }
+      if (a.ncPurchases) out.ncPurchases = a.ncPurchases;
+      state.metrics[id] = out; res.matched++;
+      if (out.from && out.to) res.window = formatDate(out.from) + ' to ' + formatDate(out.to);
+    });
+    return res;
+  }
+  function money(n) { return n == null ? '' : '£' + (n >= 100 ? Math.round(n).toLocaleString('en-GB') : n.toFixed(2)); }
 
   function defaultSettings() {
     return {
@@ -341,6 +413,6 @@ window.JawdaData = (function () {
     newCard: newCard, buildName: buildName, buildUtm: buildUtm, slug: slug, nextId: nextId,
     parseDate: parseDate, formatDate: formatDate, parseCsv: parseCsv, importCsv: importCsv,
     exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings,
-    canvaEmbedUrl: canvaEmbedUrl, isImageUrl: isImageUrl
+    canvaEmbedUrl: canvaEmbedUrl, isImageUrl: isImageUrl, importMetrics: importMetrics, money: money
   };
 })();
