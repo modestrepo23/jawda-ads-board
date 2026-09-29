@@ -6,7 +6,7 @@
   const esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
   const store = window.JawdaStorage.create();
-  let state = { cards: [], settings: D.defaultSettings(), metrics: {} };
+  let state = { cards: [], settings: D.defaultSettings() };
   let filters = { q: '', angle: '', funnel: '', formatType: '', creativeType: '' };
   let openId = null;
   let dragId = null;
@@ -107,7 +107,8 @@
     let shown = 0;
     statusList().forEach(function (s) {
       const cards = state.cards.filter(function (c) { return c.status === s.key; }).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-      const visible = cards.filter(matches);
+      const hasMetrics = cards.some(function (c) { const m = metricsData()[c.id]; return m && (m.core || m.eu); });
+      const visible = applySort(s.key, cards.filter(matches));
       shown += visible.length;
       const collapsed = !!state.settings.collapsed[s.key];
       const col = document.createElement('section');
@@ -115,20 +116,21 @@
       col.dataset.status = s.key;
       col.innerHTML =
         '<div class="col-head"><div class="title"><h2>' + esc(s.label) + ' <span class="n">' + visible.length + (visible.length !== cards.length ? ' of ' + cards.length : '') + '</span></h2>' +
-        (s.hint ? '<p>' + esc(s.hint) + '</p>' : '') + '</div>' +
+        (s.hint ? '<p>' + esc(s.hint) + '</p>' : '') + (hasMetrics && !collapsed ? sortBar(s.key) : '') + '</div>' +
         '<button class="collapse" title="' + (collapsed ? 'Expand' : 'Collapse') + ' column" aria-label="' + (collapsed ? 'Expand' : 'Collapse') + ' column">' + (collapsed ? '&#x25B8;' : '&#x25BE;') + '</button></div>' +
         '<div class="cards"></div><button class="col-add">+ Add ticket</button>';
       const list = col.querySelector('.cards');
       visible.forEach(function (c) { list.appendChild(renderCard(c)); });
       col.querySelector('.collapse').onclick = function () { state.settings.collapsed[s.key] = !collapsed; saveSettings(); renderBoard(); };
       col.querySelector('.col-add').onclick = function () { createCard(s.key); };
+      col.querySelectorAll('[data-sort]').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); setSort(s.key, b.dataset.sort); }; });
       col.addEventListener('dragover', function (e) { e.preventDefault(); col.classList.add('over'); });
       col.addEventListener('dragleave', function () { col.classList.remove('over'); });
       col.addEventListener('drop', function (e) { e.preventDefault(); col.classList.remove('over'); onDrop(s.key, e, list); });
       board.appendChild(col);
     });
     const pub = state.cards.filter(function (c) { return c.status === 'published'; }).length;
-    $('boardSummary').textContent = state.cards.length + ' tickets, ' + pub + ' published' + nextShootText();
+    $('boardSummary').textContent = state.cards.length + ' tickets, ' + pub + ' published' + nextShootText() + metaDataText().replace(/&amp;/g, '&');
     $('filterCount').textContent = shown !== state.cards.length ? shown + ' of ' + state.cards.length + ' shown' : '';
   }
 
@@ -147,7 +149,7 @@
       '<div class="chips">' + [c.funnel, c.formatType].filter(Boolean).map(function (v) { return '<span class="chip">' + esc(v) + '</span>'; }).join('') +
       (c.ai ? '<span class="chip ai">' + esc(c.ai) + '</span>' : '') +
       ((c.canvaLandscape || c.canvaSquare) ? '<span class="chip canva">Canva</span>' : '') + '</div>' +
-      (metricsLine(c) ? '<p class="perf">' + metricsLine(c) + '</p>' : '') +
+      metricsStrip(c) +
       ((c.comments.length || c.brief) ? '<div class="foot">' + (c.brief ? '<span class="comments-n">Briefed</span>' : '') +
       (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') + '</div>' : '') +
       (warn ? '<span class="flag" title="Copy contains claims to check">&#9888;</span>' : '');
@@ -279,27 +281,44 @@
       (card[key] && values.indexOf(card[key]) < 0 ? '<option selected>' + esc(card[key]) + '</option>' : '') + '</select></div>';
   }
 
-  // Performance line for a card, from the latest imported or pulled Meta data.
-  function metricsLine(c) {
-    const m = state.metrics && state.metrics[c.id]; if (!m || m.spend == null) return '';
-    const parts = [esc(D.money(m.spend)) + ' spend'];
-    if (m.roas != null) parts.push(m.roas.toFixed(2) + ' ROAS');
-    if (m.ncCpa != null) parts.push(esc(D.money(m.ncCpa)) + ' NC-CPA');
-    return parts.join(', ');
+  // Performance strip on a card: Core and EU rows, only when the export had this ID.
+  function fmtRoas(v) { return v == null ? '<i>n/a</i>' : v.toFixed(2); }
+  function fmtCpa(v) { return v == null ? '<i>n/a</i>' : esc(D.money(v)); }
+  function fmtFtir(v) { return v == null ? '<i>n/a</i>' : Math.round(v * 100) + '%'; }
+  function metricsData() { return (state.settings.metrics && state.settings.metrics.byId) || {}; }
+  function metricsStrip(c) {
+    const md = state.settings.metrics; const m = metricsData()[c.id]; if (!m || (!m.core && !m.eu)) return '';
+    const row = function (label, x) { if (!x) return ''; return '<tr><td>' + label + '</td><td>' + esc(D.money(x.spend)) + '</td><td>' + fmtRoas(x.roas) + '</td><td>' + fmtCpa(x.cpa) + '</td><td>' + fmtFtir(x.ftir) + '</td></tr>'; };
+    return '<div class="perf-mini"><table><tr><th></th><th>Spend</th><th>ROAS</th><th>CPA</th><th>FTIR</th></tr>' + row('Core', m.core) + row('EU', m.eu) + '</table>' +
+      (md.from && md.to ? '<div class="win">' + esc(D.formatDate(md.from)) + ' to ' + esc(D.formatDate(md.to)) + '</div>' : '') + '</div>';
   }
-  function metricsHtml(card) {
-    const m = state.metrics && state.metrics[card.id];
-    if (!m) return '<p class="hint">No Meta data for this ID yet. Use Data, Import Meta metrics, or set up the daily pull (see README).</p>';
-    const cell = function (label, value, note) { return '<div class="stat"><span class="stat-v">' + (value == null || value === '' ? '<i>n/a</i>' : esc(value)) + '</span><span class="stat-l">' + esc(label) + (note ? ' <em>' + esc(note) + '</em>' : '') + '</span></div>'; };
-    const win = (m.from && m.to) ? D.formatDate(m.from) + ' to ' + D.formatDate(m.to) : '';
-    return '<div class="stats">' +
-      cell('Spend', D.money(m.spend)) +
-      cell('ROAS', m.roas != null ? m.roas.toFixed(2) : null, 'Meta reported') +
-      cell('Purchases', m.purchases != null ? Math.round(m.purchases) : null) +
-      cell('Cost per purchase', m.cpa != null ? D.money(m.cpa) : null) +
-      cell('NC-CPA', m.ncCpa != null ? D.money(m.ncCpa) : null, m.ncCpa == null ? 'needs Triple Whale export' : 'Triple Whale') +
-      '</div><p class="hint">' + (win ? 'Window ' + esc(win) + '. ' : '') + 'Updated ' + esc(relTime(m.updatedAt)) + (m.source ? ' from ' + esc(m.source === 'csv' ? 'a CSV import' : m.source) : '') + '.' +
-      (m.adId ? ' <a href="https://adsmanager.facebook.com/adsmanager/manage/ads?selected_ad_ids=' + esc(m.adId) + '" target="_blank" rel="noopener">Open in Ads Manager</a>' : '') + '</p>';
+
+  // Sorting a column by performance. Remembered per browser, not shared.
+  let sortPref = (function () { try { return JSON.parse(localStorage.getItem('jawda-sort') || 'null'); } catch (e) { return null; } })() || {};
+  const SORT_KEYS = [['spend', 'Spend'], ['roas', 'ROAS'], ['cpa', 'CPA'], ['ftir', 'FTIR']];
+  function sortBar(statusKey) {
+    const cur = sortPref[statusKey];
+    return '<div class="sortbar"><span>Sort</span>' + SORT_KEYS.map(function (k) {
+      const on = cur && cur.key === k[0];
+      return '<button type="button" data-sort="' + k[0] + '" class="' + (on ? 'on' : '') + '">' + k[1] + (on ? (cur.dir === 'desc' ? '&darr;' : '&uarr;') : '') + '</button>';
+    }).join('') + (cur ? '<button type="button" data-sort="" title="Back to manual order">&times;</button>' : '') + '</div>';
+  }
+  function applySort(statusKey, cards) {
+    const cur = sortPref[statusKey]; if (!cur || !cur.key) return cards;
+    const val = function (c) { const m = D.combined(metricsData()[c.id]); return m ? m[cur.key] : null; };
+    return cards.slice().sort(function (a, b) {
+      const va = val(a), vb = val(b);
+      if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1;
+      return cur.dir === 'desc' ? vb - va : va - vb;
+    });
+  }
+  function setSort(statusKey, key) {
+    const cur = sortPref[statusKey];
+    if (!key) delete sortPref[statusKey];
+    else if (cur && cur.key === key) cur.dir = cur.dir === 'desc' ? 'asc' : 'desc';
+    else sortPref[statusKey] = { key: key, dir: key === 'cpa' ? 'asc' : 'desc' };
+    localStorage.setItem('jawda-sort', JSON.stringify(sortPref));
+    renderBoard();
   }
 
   function renderDrawer() {
@@ -348,8 +367,6 @@
       textField(card, 'headlineOne', 'Headline one', { limit: D.LIMITS.headline }) +
       textField(card, 'headlineTwo', 'Headline two', { limit: D.LIMITS.headline }) +
       '</div>' + (warnings.length ? '<h3 style="margin-top:12px">Check before it runs</h3><ul class="warnings" id="warnings">' + warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '<div id="warnings"></div>') + '</div>' +
-
-      '<div class="section"><h3>Performance <span>from Meta, matched on the #ID in the ad name</span></h3>' + metricsHtml(card) + '</div>' +
 
       '<div class="section"><h3>Learnings <span>fill in once it has run</span></h3>' +
       textField(card, 'learnings', 'Learnings', { area: true, rows: 3, placeholder: 'What the numbers said, what to keep, what to change' }) +
@@ -552,6 +569,10 @@
   // Upcoming shoots live in board settings, so the whole team sees the same list.
   function shoots() { return state.settings.shoots || (state.settings.shoots = []); }
   function upcomingShoots() { const t = today(); return shoots().filter(function (x) { return x.date >= t; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
+  function metaDataText() {
+    const md = state.settings.metrics; if (!md || !md.updatedAt) return '';
+    return '. Meta data ' + (md.from && md.to ? D.formatDate(md.from) + ' to ' + D.formatDate(md.to) : '') + ', updated ' + relTime(md.updatedAt) + (md.updatedBy ? ' by ' + esc(md.updatedBy) : '');
+  }
   function nextShootText() {
     const n = upcomingShoots()[0]; if (!n) return '';
     return '. Next shoot ' + D.formatDate(n.date) + (n.source ? ', ' + n.source : '');
@@ -628,29 +649,42 @@
     } catch (e) { alert('Import failed. ' + e.message); }
   }
 
-  /* ---------- modal: Meta metrics import ---------- */
-  function openMetricsImport() {
-    openModal('Import Meta metrics',
-      '<p class="note"><b>From Ads Manager:</b> set the date range you want (last 7 or 14 days works well), switch to the Ads tab, Reports, Export table data, CSV. Make sure the columns include Ad name, Amount spent, Purchase ROAS, Purchases and Cost per purchase.<br><br>' +
-      '<b>From Triple Whale:</b> export the ad-level table with Ad name, Spend, ROAS and NC-CPA. Both files match tickets by the #ID at the start of the ad name; anything without a matching ticket is listed after import.</p>' +
-      '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><button class="btn" id="pickMetrics">Choose CSV file</button><span class="hint" id="pickMetricsName" style="align-self:center"></span></div>' +
-      '<div class="field"><label for="metricsBox">Or paste CSV</label><textarea id="metricsBox" placeholder="Ad name,Amount spent (GBP),Purchase ROAS (return on ad spend),..."></textarea></div>' +
-      '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="metricsCancel">Cancel</button><button class="btn primary" id="metricsRun">Import</button></div>');
+  /* ---------- Meta data panel ---------- */
+  function openMetaData() {
+    const md = state.settings.metrics;
+    const n = md ? Object.keys(md.byId || {}).length : 0;
+    const status = md && md.updatedAt
+      ? '<div class="section" style="margin-bottom:14px"><h3>Current data</h3><div class="stats">' +
+        '<div class="stat"><span class="stat-v">' + esc(md.from && md.to ? D.formatDate(md.from) + ' to ' + D.formatDate(md.to) : 'n/a') + '</span><span class="stat-l">Reporting window</span></div>' +
+        '<div class="stat"><span class="stat-v">' + n + '</span><span class="stat-l">Tickets with figures</span></div>' +
+        '<div class="stat"><span class="stat-v">' + esc(relTime(md.updatedAt)) + '</span><span class="stat-l">Last updated' + (md.updatedBy ? ' by ' + esc(md.updatedBy) : '') + '</span></div>' +
+        '</div><div style="margin-top:10px"><button class="btn small quiet danger" id="metaClear">Remove this data</button></div></div>'
+      : '<div class="section" style="margin-bottom:14px"><h3>Current data</h3><p class="hint">No Meta data on the board yet.</p></div>';
+    openModal('Meta data',
+      status +
+      '<div class="section"><h3>Upload an export</h3>' +
+      '<p class="note">In Ads Manager set the date range, open the Ads tab, then Reports, Export table data, CSV. Drop the file in as it comes. Ads are matched to tickets by the #ID at the start of the ad name; a name ending "– Copy" counts as EU. Each upload replaces the previous figures with the new period.</p>' +
+      '<div class="grid"><div class="field"><label for="metaBy">Uploaded by</label><select id="metaBy">' + ['', ].concat(state.settings.team).map(function (t) { return '<option value="' + esc(t) + '"' + (t === me ? ' selected' : '') + '>' + (t || 'Not set') + '</option>'; }).join('') + '</select></div></div>' +
+      '<div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap"><button class="btn" id="pickMetrics">Choose CSV file</button><span class="hint" id="pickMetricsName" style="align-self:center"></span></div>' +
+      '<div class="field"><label for="metricsBox">Or paste CSV</label><textarea id="metricsBox" placeholder="Reporting starts,Reporting ends,Ad name,..."></textarea></div>' +
+      '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="metricsCancel">Close</button><button class="btn primary" id="metricsRun">Upload</button></div></div>');
     $('pickMetrics').onclick = function () { $('fileInput').accept = '.csv,text/csv'; $('fileInput').dataset.mode = 'metrics'; $('fileInput').click(); };
     $('metricsCancel').onclick = closeModal;
     $('metricsRun').onclick = function () { runMetricsImport($('metricsBox').value); };
+    if ($('metaClear')) $('metaClear').onclick = function () {
+      if (!confirm('Remove the Meta figures from every card? You can upload a new export any time.')) return;
+      state.settings.metrics = null; saveSettings(); renderBoard(); openMetaData();
+    };
   }
   function runMetricsImport(text) {
-    if (!text.trim()) { toast('Nothing to import'); return; }
+    if (!text.trim()) { toast('Choose or paste the export first'); return; }
     try {
-      const before = Object.assign({}, state.metrics);
-      const res = D.importMetrics(text, state, 'csv');
-      const changed = Object.keys(state.metrics).filter(function (id) { return state.metrics[id] !== before[id]; });
-      setSync(true);
-      Promise.resolve(store.saveMetrics(changed, state)).then(function () { setSync(false); }).catch(function (e) { setSync(false, e.message); });
-      closeModal(); renderBoard(); if (openId) renderDrawer();
-      toast('Metrics updated for ' + res.matched + ' ticket' + (res.matched === 1 ? '' : 's') + (res.window ? ' (' + res.window + ')' : '') + (res.unmatched.length ? '; ' + res.unmatched.length + ' ad' + (res.unmatched.length === 1 ? '' : 's') + ' had no matching ticket' : ''));
-    } catch (e) { alert('Import failed. ' + e.message); }
+      const by = $('metaBy') ? $('metaBy').value : me;
+      const res = D.importMetrics(text, state, by);
+      saveSettings(); renderBoard(); if (openId) renderDrawer();
+      openMetaData();
+      toast('Meta data added to ' + res.matched + ' ticket' + (res.matched === 1 ? '' : 's') + (res.window ? ' (' + res.window + ')' : '') + (res.unmatched.length ? '; ' + res.unmatched.length + ' ad' + (res.unmatched.length === 1 ? '' : 's') + ' had no matching ticket' : ''));
+    } catch (e) { alert('Upload failed. ' + e.message); }
   }
 
   /* ---------- events ---------- */
@@ -658,6 +692,7 @@
     $('newBtn').onclick = function () { createCard('backlog'); };
     $('settingsBtn').onclick = openSettings;
     $('shootsBtn').onclick = openShoots;
+    $('metaBtn').onclick = openMetaData;
     $('modalClose').onclick = closeModal;
     $('modal').onclick = function (e) { if (e.target === $('modal')) closeModal(); };
     $('scrim').onclick = closeDrawer;
@@ -679,7 +714,6 @@
         menu.classList.remove('open');
         const act = b.dataset.act;
         if (act === 'import') openImport();
-        if (act === 'metrics') openMetricsImport();
         if (act === 'export') { download('jawda-meta-ads-' + today() + '.csv', D.exportCsv(state), 'text/csv'); toast('CSV downloaded'); }
         if (act === 'backup') { download('jawda-board-backup-' + today() + '.json', JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards: state.cards, settings: state.settings }, null, 2), 'application/json'); toast('Backup downloaded'); }
         if (act === 'restore') { $('fileInput').accept = '.json,application/json'; $('fileInput').dataset.mode = 'json'; $('fileInput').click(); }
@@ -731,7 +765,6 @@
     if (data && data.settings) state.settings = Object.assign(D.defaultSettings(), data.settings);
     if (!state.settings.collapsed) state.settings.collapsed = {};
     if (!Array.isArray(state.settings.shoots)) state.settings.shoots = [];
-    state.metrics = (data && data.metrics) || state.metrics || {};
     $('boardName').value = state.settings.boardName || 'Board';
   }
   function boot() {

@@ -315,76 +315,86 @@ window.JawdaData = (function () {
     return CLAIM_RULES.filter(function (r) { return r.re.test(text); }).map(function (r) { return r.note; });
   }
 
-  // Ad performance. One record per ticket ID, matched from the ad name's "#1139" prefix.
-  // Accepts an Ads Manager ad-level export (spend, ROAS, purchases, cost per purchase)
-  // or a Triple Whale export (adds NC-CPA). Columns are found by name, so extra columns
-  // are ignored and the order does not matter.
+  // Ad performance from a Meta ad-level export. One record per ticket ID, split into
+  // Core and EU: an ad name ending "– Copy" (or "– Copy 2", "– Copy 3") is the EU version.
+  // Several rows for one ID and campaign are combined: spend and purchases summed,
+  // ROAS and CPA recomputed from the totals, FTIR weighted by impressions.
   const METRIC_COLUMNS = {
-    name: [/^ad name$/i, /^ad$/i, /^name$/i],
-    adId: [/^ad id$/i],
-    spend: [/^amount spent/i, /^spend$/i, /^ad spend/i, /^cost$/i],
-    roas: [/^purchase roas/i, /^roas$/i, /website purchase roas/i],
-    purchases: [/^purchases$/i, /^orders$/i, /^conversions$/i, /^website purchases$/i],
-    cpa: [/^cost per purchase/i, /^cpa$/i, /^cost per order/i],
-    ncCpa: [/^nc[\s-]?cpa/i, /new customer cpa/i, /cost per new customer/i, /^ncpa$/i],
-    ncPurchases: [/^new customer(s| orders| purchases)?$/i, /^nc orders$/i],
-    from: [/^reporting starts$/i, /^start( date)?$/i, /^date start$/i],
-    to: [/^reporting ends$/i, /^end( date)?$/i, /^date stop$/i]
+    name: [/^ad name$/i],
+    spend: [/^amount spent/i],
+    roas: [/^purchase roas/i],
+    cpa: [/^cost per purchase/i],
+    ftir: [/^ftir$/i],
+    revenue: [/^purchases conversion value/i],
+    purchases: [/^purchases$/i],
+    impressions: [/^impressions$/i],
+    from: [/^reporting starts$/i],
+    to: [/^reporting ends$/i],
+    adId: [/^ad id$/i]
   };
-  function num(v) { v = String(v == null ? '' : v).replace(/[£$,\s]/g, '').replace(/x$/i, ''); if (v === '' || v === '-') return null; const n = parseFloat(v); return isNaN(n) ? null : n; }
-  function importMetrics(text, state, source) {
+  const EU_MARKER = /\s*(?:–|—|-|â€“|â€”)\s*Copy(?:\s*\d+)?\s*$/i;
+  function num(v) { v = String(v == null ? '' : v).replace(/[£$,\s%]/g, ''); if (v === '' || v === '-') return null; const n = parseFloat(v); return isNaN(n) ? null : n; }
+  function importMetrics(text, state, by) {
     const rows = parseCsv(text);
-    const hi = rows.findIndex(function (r) { return r.some(function (c) { return METRIC_COLUMNS.name.some(function (re) { return re.test(c.trim()); }); }); });
-    if (hi < 0) throw new Error('Could not find an "Ad name" column.');
+    const hi = rows.findIndex(function (r) { return r.some(function (c) { return /^ad name$/i.test(c.trim()); }); });
+    if (hi < 0) throw new Error('Could not find an "Ad name" column. Export the Ads table from Ads Manager as CSV.');
     const header = rows[hi].map(function (h) { return h.trim(); });
     const col = {};
     Object.keys(METRIC_COLUMNS).forEach(function (k) {
       const i = header.findIndex(function (h) { return METRIC_COLUMNS[k].some(function (re) { return re.test(h); }); });
       if (i >= 0) col[k] = i;
     });
-    if (col.spend === undefined && col.roas === undefined && col.ncCpa === undefined) throw new Error('No spend, ROAS or NC-CPA column found.');
+    if (col.spend === undefined) throw new Error('No "Amount spent" column found.');
     const ids = {}; state.cards.forEach(function (c) { ids[c.id] = true; });
-    state.metrics = state.metrics || {};
-    const now = new Date().toISOString();
-    const res = { matched: 0, unmatched: [], window: '' };
-    const acc = {};
+    const acc = {}; const res = { matched: 0, unmatched: [], window: '' };
+    let from = '', to = '';
     for (let r = hi + 1; r < rows.length; r++) {
-      const row = rows[r]; const name = (row[col.name] || '').trim();
-      const m = name.match(/^#?\s*(\d{3,5})\b/); if (!m) { if (name) res.unmatched.push(name); continue; }
-      const id = m[1]; if (!ids[id]) { res.unmatched.push(name); continue; }
+      const row = rows[r]; const name = (row[col.name] || '').trim(); if (!name) continue;
+      const m = name.match(/^#?\s*(\d{3,5})\b/);
+      if (!m || !ids[m[1]]) { res.unmatched.push(name); continue; }
+      const id = m[1]; const camp = EU_MARKER.test(name) ? 'eu' : 'core';
       const get = function (k) { return col[k] === undefined ? null : num(row[col[k]]); };
-      // Several rows can share an ID (one per ad set or day): sum spend and purchases, recompute rates.
-      const a = acc[id] || (acc[id] = { spend: 0, purchases: 0, revenue: 0, ncPurchases: 0, rows: 0, roasRows: 0, ncCpaRows: [], from: '', to: '', adId: '' });
-      const spend = get('spend') || 0, roas = get('roas'), purchases = get('purchases') || 0;
-      a.spend += spend; a.purchases += purchases; a.rows++;
-      if (roas !== null) { a.revenue += roas * spend; a.roasRows++; }
-      const nc = get('ncCpa'); if (nc !== null) a.ncCpaRows.push({ cpa: nc, spend: spend });
-      a.ncPurchases += get('ncPurchases') || 0;
-      if (col.adId !== undefined && row[col.adId]) a.adId = String(row[col.adId]).trim();
+      const a = acc[id] || (acc[id] = { core: null, eu: null });
+      const c = a[camp] || (a[camp] = { spend: 0, revenue: 0, purchases: 0, impressions: 0, ftirW: 0, ftirN: 0, adId: '' });
+      const spend = get('spend') || 0, imp = get('impressions') || 0;
+      c.spend += spend; c.purchases += get('purchases') || 0; c.impressions += imp;
+      const rev = get('revenue'); const roas = get('roas');
+      c.revenue += rev != null ? rev : (roas != null ? roas * spend : 0);
+      const ftir = get('ftir'); if (ftir != null) { const w = imp || spend || 1; c.ftirW += ftir * w; c.ftirN += w; }
+      if (col.adId !== undefined && row[col.adId] && !c.adId) c.adId = String(row[col.adId]).trim();
       const f = col.from !== undefined ? parseDate(row[col.from]) : ''; const t = col.to !== undefined ? parseDate(row[col.to]) : '';
-      if (f && (!a.from || f < a.from)) a.from = f; if (t && (!a.to || t > a.to)) a.to = t;
+      if (f && (!from || f < from)) from = f; if (t && (!to || t > to)) to = t;
     }
-    Object.keys(acc).forEach(function (id) {
-      const a = acc[id];
-      const prev = state.metrics[id] || {};
-      // Only overwrite what this file actually reports, so a Triple Whale file adds NC-CPA
-      // without wiping the purchases that came from Ads Manager.
-      const out = Object.assign({}, prev, { from: a.from || prev.from || '', to: a.to || prev.to || '', adId: a.adId || prev.adId || '', source: source || 'csv', updatedAt: now });
-      if (col.spend !== undefined) out.spend = a.spend;
-      if (col.purchases !== undefined) out.purchases = a.purchases;
-      if (col.roas !== undefined) out.roas = a.roasRows ? (a.spend ? a.revenue / a.spend : null) : (prev.roas != null ? prev.roas : null);
-      if (col.purchases !== undefined || col.cpa !== undefined) out.cpa = (out.purchases && out.spend != null) ? out.spend / out.purchases : null;
-      if (a.ncCpaRows.length) {
-        const w = a.ncCpaRows.reduce(function (t, x) { return t + x.spend; }, 0);
-        out.ncCpa = w ? a.ncCpaRows.reduce(function (t, x) { return t + x.cpa * x.spend; }, 0) / w : a.ncCpaRows[0].cpa;
-      }
-      if (a.ncPurchases) out.ncPurchases = a.ncPurchases;
-      state.metrics[id] = out; res.matched++;
-      if (out.from && out.to) res.window = formatDate(out.from) + ' to ' + formatDate(out.to);
-    });
+    const finish = function (c) {
+      if (!c) return null;
+      return {
+        spend: c.spend,
+        roas: c.spend > 0 && c.revenue > 0 ? c.revenue / c.spend : null,
+        cpa: c.purchases > 0 ? c.spend / c.purchases : null,
+        ftir: c.ftirN ? c.ftirW / c.ftirN : null,
+        purchases: c.purchases, impressions: c.impressions, adId: c.adId
+      };
+    };
+    const byId = {};
+    Object.keys(acc).forEach(function (id) { byId[id] = { core: finish(acc[id].core), eu: finish(acc[id].eu) }; res.matched++; });
+    // The export describes one reporting window, so it replaces whatever was there before.
+    state.settings.metrics = { byId: byId, from: from, to: to, updatedAt: new Date().toISOString(), updatedBy: by || '', ads: rows.length - hi - 1 };
+    res.window = from && to ? formatDate(from) + ' to ' + formatDate(to) : '';
+    res.from = from; res.to = to;
     return res;
   }
-  function money(n) { return n == null ? '' : '£' + (n >= 100 ? Math.round(n).toLocaleString('en-GB') : n.toFixed(2)); }
+  // Combined figure across Core and EU, used for sorting.
+  function combined(m) {
+    if (!m) return null;
+    const parts = [m.core, m.eu].filter(Boolean); if (!parts.length) return null;
+    const spend = parts.reduce(function (t, x) { return t + (x.spend || 0); }, 0);
+    const purchases = parts.reduce(function (t, x) { return t + (x.purchases || 0); }, 0);
+    const revenue = parts.reduce(function (t, x) { return t + ((x.roas || 0) * (x.spend || 0)); }, 0);
+    const impW = parts.reduce(function (t, x) { return t + (x.ftir != null ? (x.impressions || x.spend || 1) : 0); }, 0);
+    const ftir = impW ? parts.reduce(function (t, x) { return t + (x.ftir != null ? x.ftir * (x.impressions || x.spend || 1) : 0); }, 0) / impW : null;
+    return { spend: spend, roas: spend > 0 && revenue > 0 ? revenue / spend : null, cpa: purchases > 0 ? spend / purchases : null, ftir: ftir };
+  }
+  function money(n) { return n == null ? '' : '£' + (n >= 1000 ? Math.round(n).toLocaleString('en-GB') : n >= 100 ? Math.round(n) : n.toFixed(2)); }
 
   function defaultSettings() {
     return {
@@ -393,7 +403,8 @@ window.JawdaData = (function () {
       options: JSON.parse(JSON.stringify(DEFAULT_OPTIONS)),
       team: DEFAULT_TEAM.slice(),
       collapsed: {},
-      shoots: []
+      shoots: [],
+      metrics: null
     };
   }
 
@@ -403,6 +414,6 @@ window.JawdaData = (function () {
     newCard: newCard, buildName: buildName, buildUtm: buildUtm, slug: slug, nextId: nextId,
     parseDate: parseDate, formatDate: formatDate, parseCsv: parseCsv, importCsv: importCsv,
     exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings,
-    importMetrics: importMetrics, money: money
+    importMetrics: importMetrics, combined: combined, money: money
   };
 })();
