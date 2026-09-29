@@ -300,21 +300,6 @@ window.JawdaData = (function () {
     return lines.join('\n');
   }
 
-  // Flags copy claims that need substantiation on file before the ad runs.
-  const CLAIM_RULES = [
-    { re: /100%\s*(cotton|linen)/i, note: 'Fibre claim: confirm it holds for this exact SKU and colourway, lining included.' },
-    { re: /ethical(ly)?\s*(made|produc)/i, note: 'Ethics claim: substantiation must be on file.' },
-    { re: /(while stocks? last|limited (stock|quantit)|selling fast|last few)/i, note: 'Scarcity claim: must be true at the time the ad serves.' },
-    { re: /(crease|wrinkle)[-\s]?(free|resistant)/i, note: 'No crease or wrinkle resistance claims on linen.' },
-    { re: /(best[-\s]?seller|bestselling)/i, note: 'Prefer behavioural proof (what customers did) over a bestseller label.' },
-    { re: /★|\d\.\d\s*stars?|rated/i, note: 'Rating claim: keep the review source on file.' },
-    { re: /opaque|not see[-\s]?through/i, note: 'Opacity claim: verify physically before running.' }
-  ];
-  function claimWarnings(card) {
-    const text = [card.primaryOne, card.primaryTwo, card.headlineOne, card.headlineTwo].join('\n');
-    return CLAIM_RULES.filter(function (r) { return r.re.test(text); }).map(function (r) { return r.note; });
-  }
-
   // Ad performance from a Meta ad-level export. One record per ticket ID, split into
   // Core and EU: an ad name ending "– Copy" (or "– Copy 2", "– Copy 3") is the EU version.
   // Several rows for one ID and campaign are combined: spend and purchases summed,
@@ -413,7 +398,7 @@ window.JawdaData = (function () {
     CHECKLIST: CHECKLIST, LIMITS: LIMITS, FIELDS: FIELDS, FIRST_ID: FIRST_ID, sheetDate: sheetDate,
     newCard: newCard, buildName: buildName, buildUtm: buildUtm, slug: slug, nextId: nextId,
     parseDate: parseDate, formatDate: formatDate, parseCsv: parseCsv, importCsv: importCsv,
-    exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings,
+    exportCsv: exportCsv, defaultSettings: defaultSettings,
     importMetrics: importMetrics, combined: combined, money: money
   };
 })();

@@ -138,7 +138,6 @@
     const el = document.createElement('article');
     el.className = 'card'; el.draggable = true; el.dataset.id = c.id; el.tabIndex = 0;
     const name = D.buildName(c).replace(/^#\d+:?\s*/, '');
-    const warn = D.claimWarnings(c).length;
     const launch = D.sheetDate(c, 'launchDate');
     const entered = c.stageDates && c.stageDates[c.status];
     const dateShown = launch ? 'Launched ' + D.formatDate(launch) : (entered ? 'Since ' + D.formatDate(entered) : '');
@@ -152,7 +151,7 @@
       metricsStrip(c) +
       ((c.comments.length || c.brief) ? '<div class="foot">' + (c.brief ? '<span class="comments-n">Briefed</span>' : '') +
       (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') + '</div>' : '') +
-      (warn ? '<span class="flag" title="Copy contains claims to check">&#9888;</span>' : '');
+      '';
     el.onclick = function () { openCard(c.id); };
     el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(c.id); } };
     el.addEventListener('dragstart', function (e) { dragId = c.id; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', c.id); });
@@ -333,7 +332,6 @@
       '<span class="saved-note">Updated ' + esc(relTime(card.updatedAt)) + '</span></div></div>' +
       '<button class="btn quiet" id="drawerClose" aria-label="Close">Close</button>';
 
-    const warnings = D.claimWarnings(card);
     const dateRows = statusList().filter(function (st) { return st.key !== 'backlog' && st.key !== 'rejected'; }).map(function (st) {
       const v = (card.stageDates && card.stageDates[st.key]) || '';
       return '<div class="field"><label for="sd-' + st.key + '">' + esc(st.label) + '</label><input id="sd-' + st.key + '" type="date" data-stage="' + st.key + '" value="' + esc(v) + '"></div>';
@@ -366,7 +364,7 @@
       textField(card, 'primaryTwo', 'Primary text two', { area: true, span: true, rows: 3, limit: D.LIMITS.primary }) +
       textField(card, 'headlineOne', 'Headline one', { limit: D.LIMITS.headline }) +
       textField(card, 'headlineTwo', 'Headline two', { limit: D.LIMITS.headline }) +
-      '</div>' + (warnings.length ? '<h3 style="margin-top:12px">Check before it runs</h3><ul class="warnings" id="warnings">' + warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '<div id="warnings"></div>') + '</div>' +
+      '</div></div>' +
 
       '<div class="section"><h3>Learnings <span>fill in once it has run</span></h3>' +
       textField(card, 'learnings', 'Learnings', { area: true, rows: 3, placeholder: 'What the numbers said, what to keep, what to change' }) +
@@ -419,10 +417,6 @@
       const update = function () {
         card[key] = inp.value;
         if (nameKeys.indexOf(key) >= 0) refreshName();
-        if (['primaryOne', 'primaryTwo', 'headlineOne', 'headlineTwo'].indexOf(key) >= 0) {
-          const ws = D.claimWarnings(card); const w = $('warnings');
-          if (w) { w.innerHTML = ws.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join(''); w.className = ws.length ? 'warnings' : ''; }
-        }
         queueSave(card);
       };
       inp.addEventListener('input', update);
