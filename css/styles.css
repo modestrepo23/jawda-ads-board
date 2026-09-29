@@ -248,17 +248,17 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--suede); }
 .note { background: var(--desert); border-radius: 6px; padding: 10px 12px; font-size: 13px; color: var(--suede); margin-bottom: 12px; }
 .note code { background: var(--pearl); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
-/* Creative previews */
-.previews { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-.previews:empty { display: none; }
-@media (max-width: 620px) { .previews { grid-template-columns: 1fr; } }
-.preview { background: var(--pearl); border-radius: 6px; padding: 8px; }
-.preview-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--suede); margin-bottom: 6px; }
-.preview-head a { font-size: 12px; }
-.preview-frame, .preview-img { display: block; width: 100%; border: 0; border-radius: 4px; background: var(--desert); object-fit: contain; }
-.preview-load { width: 100%; aspect-ratio: 16 / 9; border: 1px dashed var(--eagle); background: var(--desert); color: var(--suede); border-radius: 4px; font-size: 13px; }
-.preview-load:hover { border-color: var(--umber); color: var(--umber); }
-.chip.canva { background: #EEE6DA; border: 1px solid var(--eagle); }
+/* Performance */
+.card .perf { margin: 6px 0 0; font-size: 12px; color: var(--umber); font-weight: 500; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.stat { background: var(--pearl); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; }
+.stat-v { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 22px; color: var(--crater); line-height: 1.1; }
+.stat-v i { font-style: italic; color: var(--ash); font-size: 16px; }
+.stat-l { font-size: 11px; color: var(--suede); margin-top: 4px; }
+.stat-l em { font-style: normal; color: var(--ash); }
+
+.open-btn { text-decoration: none; }
+.open-btn[aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
 
 /* Confirming a new dropdown value */
 .field input.pending { border-color: var(--umber); background: #FBF4F0; }
