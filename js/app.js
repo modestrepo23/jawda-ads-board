@@ -6,7 +6,7 @@
   const esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
   const store = window.JawdaStorage.create();
-  let state = { cards: [], settings: D.defaultSettings() };
+  let state = { cards: [], settings: D.defaultSettings(), metrics: {} };
   let filters = { q: '', angle: '', funnel: '', formatType: '', creativeType: '' };
   let openId = null;
   let dragId = null;
@@ -147,6 +147,7 @@
       '<div class="chips">' + [c.funnel, c.formatType].filter(Boolean).map(function (v) { return '<span class="chip">' + esc(v) + '</span>'; }).join('') +
       (c.ai ? '<span class="chip ai">' + esc(c.ai) + '</span>' : '') +
       ((c.canvaLandscape || c.canvaSquare) ? '<span class="chip canva">Canva</span>' : '') + '</div>' +
+      (metricsLine(c) ? '<p class="perf">' + metricsLine(c) + '</p>' : '') +
       ((c.comments.length || c.brief) ? '<div class="foot">' + (c.brief ? '<span class="comments-n">Briefed</span>' : '') +
       (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') + '</div>' : '') +
       (warn ? '<span class="flag" title="Copy contains claims to check">&#9888;</span>' : '');
@@ -263,6 +264,14 @@
       (opts.limit ? '<div class="meta"><span>' + esc(opts.limitNote || '') + '</span><span class="len" data-limit="' + opts.limit + '"></span></div>' : '') +
       (opts.hint ? '<p class="hint">' + esc(opts.hint) + '</p>' : '') + '</div>';
   }
+  // A link with an Open button that goes live as soon as something is typed.
+  function linkField(card, key, label, placeholder) {
+    const v = (card[key] || '').trim();
+    return '<div class="field span"><label for="f-' + key + '">' + esc(label) + '</label><div class="with-btn">' +
+      '<input id="f-' + key + '" data-key="' + key + '" type="url" value="' + esc(card[key]) + '" placeholder="' + esc(placeholder || '') + '">' +
+      '<a class="btn small open-btn" data-open="' + key + '" href="' + esc(v || '#') + '" target="_blank" rel="noopener"' + (v ? '' : ' aria-disabled="true"') + '>Open</a>' +
+      '<button class="btn small copy-btn" data-copy="' + key + '" type="button">Copy</button></div></div>';
+  }
   function selectField(card, key, label, values, placeholder) {
     return '<div class="field"><label for="f-' + key + '">' + esc(label) + '</label><select id="f-' + key + '" data-key="' + key + '">' +
       '<option value="">' + esc(placeholder || 'Unassigned') + '</option>' +
@@ -270,31 +279,29 @@
       (card[key] && values.indexOf(card[key]) < 0 ? '<option selected>' + esc(card[key]) + '</option>' : '') + '</select></div>';
   }
 
-  // Creative previews: Canva designs embed directly; plain image links show as images.
-  function previewsHtml(card) {
-    const items = [['canvaLandscape', '1920 x 1080', '16 / 9'], ['canvaSquare', '1080 x 1080', '1 / 1']];
-    return items.map(function (it) {
-      const link = (card[it[0]] || '').trim(); if (!link) return '';
-      const embed = D.canvaEmbedUrl(link); const img = D.isImageUrl(link);
-      if (!embed && !img) return '';
-      return '<div class="preview" data-preview="' + it[0] + '"><div class="preview-head"><span>' + it[1] + '</span>' +
-        '<a href="' + esc(link) + '" target="_blank" rel="noopener">Open in ' + (embed ? 'Canva' : 'new tab') + '</a></div>' +
-        (img ? '<img class="preview-img" src="' + esc(link) + '" alt="" style="aspect-ratio:' + it[2] + '">'
-             : '<button type="button" class="preview-load" data-embed="' + esc(embed) + '" data-ratio="' + it[2] + '">Show preview</button>') +
-        '</div>';
-    }).join('') || '';
+  // Performance line for a card, from the latest imported or pulled Meta data.
+  function metricsLine(c) {
+    const m = state.metrics && state.metrics[c.id]; if (!m || m.spend == null) return '';
+    const parts = [esc(D.money(m.spend)) + ' spend'];
+    if (m.roas != null) parts.push(m.roas.toFixed(2) + ' ROAS');
+    if (m.ncCpa != null) parts.push(esc(D.money(m.ncCpa)) + ' NC-CPA');
+    return parts.join(', ');
   }
-  function bindPreviews(card) {
-    const box = $('previews'); if (!box) return;
-    box.querySelectorAll('.preview-load').forEach(function (b) {
-      b.onclick = function () {
-        const f = document.createElement('iframe');
-        f.src = b.dataset.embed; f.loading = 'lazy'; f.allowFullscreen = true; f.className = 'preview-frame';
-        f.style.aspectRatio = b.dataset.ratio; f.title = 'Canva preview';
-        b.replaceWith(f);
-      };
-    });
+  function metricsHtml(card) {
+    const m = state.metrics && state.metrics[card.id];
+    if (!m) return '<p class="hint">No Meta data for this ID yet. Use Data, Import Meta metrics, or set up the daily pull (see README).</p>';
+    const cell = function (label, value, note) { return '<div class="stat"><span class="stat-v">' + (value == null || value === '' ? '<i>n/a</i>' : esc(value)) + '</span><span class="stat-l">' + esc(label) + (note ? ' <em>' + esc(note) + '</em>' : '') + '</span></div>'; };
+    const win = (m.from && m.to) ? D.formatDate(m.from) + ' to ' + D.formatDate(m.to) : '';
+    return '<div class="stats">' +
+      cell('Spend', D.money(m.spend)) +
+      cell('ROAS', m.roas != null ? m.roas.toFixed(2) : null, 'Meta reported') +
+      cell('Purchases', m.purchases != null ? Math.round(m.purchases) : null) +
+      cell('Cost per purchase', m.cpa != null ? D.money(m.cpa) : null) +
+      cell('NC-CPA', m.ncCpa != null ? D.money(m.ncCpa) : null, m.ncCpa == null ? 'needs Triple Whale export' : 'Triple Whale') +
+      '</div><p class="hint">' + (win ? 'Window ' + esc(win) + '. ' : '') + 'Updated ' + esc(relTime(m.updatedAt)) + (m.source ? ' from ' + esc(m.source === 'csv' ? 'a CSV import' : m.source) : '') + '.' +
+      (m.adId ? ' <a href="https://adsmanager.facebook.com/adsmanager/manage/ads?selected_ad_ids=' + esc(m.adId) + '" target="_blank" rel="noopener">Open in Ads Manager</a>' : '') + '</p>';
   }
+
   function renderDrawer() {
     const card = cardById(openId); if (!card) { closeDrawer(); return; }
     const name = D.buildName(card); const utm = D.buildUtm(card);
@@ -315,25 +322,25 @@
     $('drawerBody').innerHTML =
       '<div class="section"><h3>Brief <span>Briefed by Alamin</span></h3><div class="grid">' +
       textField(card, 'brief', 'Brief', { area: true, span: true, rows: 4, placeholder: 'The angle, the hook to test, the product and what the creative needs to show' }) +
-      textField(card, 'inspirationLink', 'Inspiration link', { type: 'url', span: true, placeholder: 'Motion, TikTok, Instagram or reference URL' }) +
+      linkField(card, 'inspirationLink', 'Inspiration link', 'Motion, TikTok, Instagram or reference URL') +
       '</div></div>' +
 
-      '<div class="section"><h3>Ad definition <span>builds the ad name and UTM</span></h3><div class="grid">' +
+      '<div class="section"><h3>Ad details <span>the first six build the ad name and UTM</span></h3><div class="grid">' +
       optionField(card, 'funnel', 'Funnel', 'funnel') + optionField(card, 'angle', 'Angle', 'angle') +
       optionField(card, 'product', 'Product', 'product') + optionField(card, 'creativeType', 'Creative type', 'creativeType') +
       optionField(card, 'formatType', 'Format type', 'formatType') + optionField(card, 'ai', 'AI or non-AI', 'ai') +
       textField(card, 'nameOverride', 'Name override', { span: true, placeholder: 'Leave blank to use the built name above', hint: 'The name follows the sheet formula: #ID: Funnel / Angle / Product / Creative type / Format / AI.' }) +
       textField(card, 'description', 'Description', { area: true, span: true, rows: 2, placeholder: 'What the creative shows, in one or two lines' }) +
+      linkField(card, 'canvaLandscape', 'Canva 1920 x 1080', 'Canva link for the landscape creative') +
+      linkField(card, 'canvaSquare', 'Canva 1080 x 1080', 'Canva link for the square creative') +
       '</div></div>' +
 
       '<div class="section"><h3>Links</h3><div class="grid">' +
-      textField(card, 'landingPage', 'Landing page', { type: 'url', span: true, placeholder: 'https://jawda.co.uk/...' }) +
+      linkField(card, 'landingPage', 'Landing page', 'https://jawda.co.uk/...') +
       '<div class="field span"><label>UTM link for Meta</label><div class="with-btn"><div class="computed" id="utmOut" style="flex:1">' + (utm ? esc(utm) : '<span style="color:var(--muted)">Add a landing page and the link builds itself</span>') + '</div>' +
       '<button class="btn small" id="copyUtm" type="button"' + (utm ? '' : ' disabled') + '>Copy</button></div></div>' +
       textField(card, 'utmOverride', 'UTM override', { span: true, placeholder: 'Only if the built link is wrong for this ad' }) +
-      textField(card, 'canvaLandscape', 'Canva 1920 x 1080', { type: 'url', copy: true }) +
-      textField(card, 'canvaSquare', 'Canva 1080 x 1080', { type: 'url', copy: true }) +
-      '</div><div class="previews" id="previews">' + previewsHtml(card) + '</div></div>' +
+      '</div></div>' +
 
       '<div class="section"><h3>Copy <span>counters show the safe length before Meta truncates</span></h3><div class="grid">' +
       textField(card, 'primaryOne', 'Primary text one', { area: true, span: true, rows: 3, limit: D.LIMITS.primary, limitNote: 'Hook first, credential mid, tagline close' }) +
@@ -341,6 +348,8 @@
       textField(card, 'headlineOne', 'Headline one', { limit: D.LIMITS.headline }) +
       textField(card, 'headlineTwo', 'Headline two', { limit: D.LIMITS.headline }) +
       '</div>' + (warnings.length ? '<h3 style="margin-top:12px">Check before it runs</h3><ul class="warnings" id="warnings">' + warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '<div id="warnings"></div>') + '</div>' +
+
+      '<div class="section"><h3>Performance <span>from Meta, matched on the #ID in the ad name</span></h3>' + metricsHtml(card) + '</div>' +
 
       '<div class="section"><h3>Learnings <span>fill in once it has run</span></h3>' +
       textField(card, 'learnings', 'Learnings', { area: true, rows: 3, placeholder: 'What the numbers said, what to keep, what to change' }) +
@@ -411,9 +420,15 @@
       b.onclick = function () { const v = card[b.dataset.copy]; if (v) navigator.clipboard.writeText(v).then(function () { toast('Copied'); }); };
     });
     $('copyUtm').onclick = function () { const u = D.buildUtm(card); if (u) navigator.clipboard.writeText(u).then(function () { toast('UTM link copied'); }); };
-    bindPreviews(card);
-    ['canvaLandscape', 'canvaSquare'].forEach(function (k) {
-      const inp = $('f-' + k); if (inp) inp.addEventListener('change', function () { $('previews').innerHTML = previewsHtml(card); bindPreviews(card); });
+    $('drawerBody').querySelectorAll('.open-btn').forEach(function (a) {
+      const inp = $('f-' + a.dataset.open);
+      const sync = function () {
+        let v = inp.value.trim();
+        if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
+        a.href = v || '#'; a.setAttribute('aria-disabled', v ? 'false' : 'true');
+      };
+      inp.addEventListener('input', sync);
+      a.onclick = function (e) { e.stopPropagation(); if (a.getAttribute('aria-disabled') === 'true') e.preventDefault(); };
     });
     $('meSel').onchange = function (e) { me = e.target.value; localStorage.setItem('jawda-me', me); };
     $('postComment').onclick = function () {
@@ -613,6 +628,31 @@
     } catch (e) { alert('Import failed. ' + e.message); }
   }
 
+  /* ---------- modal: Meta metrics import ---------- */
+  function openMetricsImport() {
+    openModal('Import Meta metrics',
+      '<p class="note"><b>From Ads Manager:</b> set the date range you want (last 7 or 14 days works well), switch to the Ads tab, Reports, Export table data, CSV. Make sure the columns include Ad name, Amount spent, Purchase ROAS, Purchases and Cost per purchase.<br><br>' +
+      '<b>From Triple Whale:</b> export the ad-level table with Ad name, Spend, ROAS and NC-CPA. Both files match tickets by the #ID at the start of the ad name; anything without a matching ticket is listed after import.</p>' +
+      '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><button class="btn" id="pickMetrics">Choose CSV file</button><span class="hint" id="pickMetricsName" style="align-self:center"></span></div>' +
+      '<div class="field"><label for="metricsBox">Or paste CSV</label><textarea id="metricsBox" placeholder="Ad name,Amount spent (GBP),Purchase ROAS (return on ad spend),..."></textarea></div>' +
+      '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="metricsCancel">Cancel</button><button class="btn primary" id="metricsRun">Import</button></div>');
+    $('pickMetrics').onclick = function () { $('fileInput').accept = '.csv,text/csv'; $('fileInput').dataset.mode = 'metrics'; $('fileInput').click(); };
+    $('metricsCancel').onclick = closeModal;
+    $('metricsRun').onclick = function () { runMetricsImport($('metricsBox').value); };
+  }
+  function runMetricsImport(text) {
+    if (!text.trim()) { toast('Nothing to import'); return; }
+    try {
+      const before = Object.assign({}, state.metrics);
+      const res = D.importMetrics(text, state, 'csv');
+      const changed = Object.keys(state.metrics).filter(function (id) { return state.metrics[id] !== before[id]; });
+      setSync(true);
+      Promise.resolve(store.saveMetrics(changed, state)).then(function () { setSync(false); }).catch(function (e) { setSync(false, e.message); });
+      closeModal(); renderBoard(); if (openId) renderDrawer();
+      toast('Metrics updated for ' + res.matched + ' ticket' + (res.matched === 1 ? '' : 's') + (res.window ? ' (' + res.window + ')' : '') + (res.unmatched.length ? '; ' + res.unmatched.length + ' ad' + (res.unmatched.length === 1 ? '' : 's') + ' had no matching ticket' : ''));
+    } catch (e) { alert('Import failed. ' + e.message); }
+  }
+
   /* ---------- events ---------- */
   function bindGlobal() {
     $('newBtn').onclick = function () { createCard('backlog'); };
@@ -639,6 +679,7 @@
         menu.classList.remove('open');
         const act = b.dataset.act;
         if (act === 'import') openImport();
+        if (act === 'metrics') openMetricsImport();
         if (act === 'export') { download('jawda-meta-ads-' + today() + '.csv', D.exportCsv(state), 'text/csv'); toast('CSV downloaded'); }
         if (act === 'backup') { download('jawda-board-backup-' + today() + '.json', JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), cards: state.cards, settings: state.settings }, null, 2), 'application/json'); toast('Backup downloaded'); }
         if (act === 'restore') { $('fileInput').accept = '.json,application/json'; $('fileInput').dataset.mode = 'json'; $('fileInput').click(); }
@@ -648,7 +689,10 @@
       const f = e.target.files[0]; if (!f) return;
       const r = new FileReader();
       r.onload = function () {
-        if ($('fileInput').dataset.mode === 'json') restoreBackup(r.result); else { if ($('csvBox')) { $('csvBox').value = r.result; $('pickName').textContent = f.name; } else runImport(r.result); }
+        const mode = $('fileInput').dataset.mode;
+        if (mode === 'json') restoreBackup(r.result);
+        else if (mode === 'metrics') { if ($('metricsBox')) { $('metricsBox').value = r.result; $('pickMetricsName').textContent = f.name; } else runMetricsImport(r.result); }
+        else { if ($('csvBox')) { $('csvBox').value = r.result; $('pickName').textContent = f.name; } else runImport(r.result); }
         e.target.value = '';
       };
       r.readAsText(f);
@@ -687,6 +731,7 @@
     if (data && data.settings) state.settings = Object.assign(D.defaultSettings(), data.settings);
     if (!state.settings.collapsed) state.settings.collapsed = {};
     if (!Array.isArray(state.settings.shoots)) state.settings.shoots = [];
+    state.metrics = (data && data.metrics) || state.metrics || {};
     $('boardName').value = state.settings.boardName || 'Board';
   }
   function boot() {

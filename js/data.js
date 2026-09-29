@@ -315,16 +315,6 @@ window.JawdaData = (function () {
     return CLAIM_RULES.filter(function (r) { return r.re.test(text); }).map(function (r) { return r.note; });
   }
 
-  // Turns any Canva design link (edit or view) into its embeddable preview URL.
-  // Works when the design is shared as "Anyone with the link can view".
-  function canvaEmbedUrl(link) {
-    // Accepts edit, view and watch (video) links, with or without the share token.
-    const m = String(link || '').match(/canva\.com\/design\/([A-Za-z0-9_-]+)(?:\/([A-Za-z0-9_-]{6,}))?(?:\/(?:view|edit|watch)|\/?(?:[?#]|$))/);
-    if (!m) return '';
-    return 'https://www.canva.com/design/' + m[1] + (m[2] ? '/' + m[2] : '') + '/view?embed';
-  }
-  function isImageUrl(link) { return /^https?:\/\/\S+\.(png|jpe?g|gif|webp)(\?\S*)?$/i.test(String(link || '').trim()); }
-
   // Ad performance. One record per ticket ID, matched from the ad name's "#1139" prefix.
   // Accepts an Ads Manager ad-level export (spend, ROAS, purchases, cost per purchase)
   // or a Triple Whale export (adds NC-CPA). Columns are found by name, so extra columns
@@ -413,6 +403,6 @@ window.JawdaData = (function () {
     newCard: newCard, buildName: buildName, buildUtm: buildUtm, slug: slug, nextId: nextId,
     parseDate: parseDate, formatDate: formatDate, parseCsv: parseCsv, importCsv: importCsv,
     exportCsv: exportCsv, claimWarnings: claimWarnings, defaultSettings: defaultSettings,
-    canvaEmbedUrl: canvaEmbedUrl, isImageUrl: isImageUrl, importMetrics: importMetrics, money: money
+    importMetrics: importMetrics, money: money
   };
 })();
