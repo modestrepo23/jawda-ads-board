@@ -149,8 +149,7 @@
       (c.ai ? '<span class="chip ai">' + esc(c.ai) + '</span>' : '') +
       ((c.canvaLandscape || c.canvaSquare) ? '<span class="chip canva">Canva</span>' : '') + '</div>' +
       metricsStrip(c) +
-      ((c.comments.length || c.brief) ? '<div class="foot">' + (c.brief ? '<span class="comments-n">Briefed</span>' : '') +
-      (c.comments.length ? '<span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span>' : '') + '</div>' : '') +
+      (c.comments.length ? '<div class="foot"><span class="comments-n">' + c.comments.length + ' note' + (c.comments.length > 1 ? 's' : '') + '</span></div>' : '') +
       '';
     el.onclick = function () { openCard(c.id); };
     el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCard(c.id); } };
@@ -286,10 +285,9 @@
   function fmtFtir(v) { return v == null ? '<i>n/a</i>' : Math.round(v * 100) + '%'; }
   function metricsData() { return (state.settings.metrics && state.settings.metrics.byId) || {}; }
   function metricsStrip(c) {
-    const md = state.settings.metrics; const m = metricsData()[c.id]; if (!m || (!m.core && !m.eu)) return '';
+    const m = metricsData()[c.id]; if (!m || (!m.core && !m.eu)) return '';
     const row = function (label, x) { if (!x) return ''; return '<tr><td>' + label + '</td><td>' + esc(D.money(x.spend)) + '</td><td>' + fmtRoas(x.roas) + '</td><td>' + fmtCpa(x.cpa) + '</td><td>' + fmtFtir(x.ftir) + '</td></tr>'; };
-    return '<div class="perf-mini"><table><tr><th></th><th>Spend</th><th>ROAS</th><th>CPA</th><th>FTIR</th></tr>' + row('Core', m.core) + row('EU', m.eu) + '</table>' +
-      (md.from && md.to ? '<div class="win">' + esc(D.formatDate(md.from)) + ' to ' + esc(D.formatDate(md.to)) + '</div>' : '') + '</div>';
+    return '<div class="perf-mini"><table><tr><th></th><th>Spend</th><th>ROAS</th><th>CPA</th><th>FTIR</th></tr>' + row('Core', m.core) + row('EU', m.eu) + '</table></div>';
   }
 
   // Sorting a column by performance. Remembered per browser, not shared.
