@@ -254,7 +254,7 @@
     const type = opts.type || 'text';
     if (opts.area) {
       return '<div class="field ' + (opts.span ? 'span' : '') + '"><label for="f-' + key + '">' + esc(label) + '</label>' +
-        '<textarea id="f-' + key + '" data-key="' + key + '" rows="' + (opts.rows || 3) + '" placeholder="' + esc(opts.placeholder || '') + '">' + esc(card[key]) + '</textarea>' +
+        '<textarea id="f-' + key + '" data-key="' + key + '" rows="' + (opts.rows || 3) + '"' + (opts.cls ? ' class="' + opts.cls + '"' : '') + ' placeholder="' + esc(opts.placeholder || '') + '">' + esc(card[key]) + '</textarea>' +
         (opts.limit ? '<div class="meta"><span>' + esc(opts.limitNote || '') + '</span><span class="len" data-limit="' + opts.limit + '"></span></div>' : '') + '</div>';
     }
     return '<div class="field ' + (opts.span ? 'span' : '') + '"><label for="f-' + key + '">' + esc(label) + '</label>' +
@@ -318,6 +318,41 @@
     renderBoard();
   }
 
+  // Stages are matched by name so stages added in Settings behave the same as the defaults.
+  const EXPANDING_BRIEF_STAGES = ['backlog', 'brief prepared', 'awaiting creative', 'needs changes', 'awaiting approval'];
+  function stageIs(card, names) { const l = statusLabel(card.status).trim().toLowerCase(); return names.indexOf(l) >= 0; }
+
+  // Everything that goes into Ads Manager, in the order it is entered there, each with Copy.
+  function metaReadyHtml(card) {
+    const items = [
+      ['Ad name', D.buildName(card), 'name'],
+      ['UTM link', D.buildUtm(card), 'utm'],
+      ['Primary text one', card.primaryOne, 'primaryOne'],
+      ['Primary text two', card.primaryTwo, 'primaryTwo'],
+      ['Headline one', card.headlineOne, 'headlineOne'],
+      ['Headline two', card.headlineTwo, 'headlineTwo']
+    ];
+    return '<div class="section meta-ready"><h3>Ready for Meta <span>copy each field into Ads Manager</span></h3>' +
+      items.map(function (it) {
+        const v = (it[1] || '').trim();
+        return '<div class="ready-row"><div class="ready-body"><span class="ready-label">' + it[0] + '</span><div class="ready-value' + (v ? '' : ' ready-empty') + '" data-ready="' + it[2] + '">' + (v ? esc(v) : 'Not filled in yet') + '</div></div>' +
+          '<button type="button" class="btn small ready-copy" data-ready-copy="' + it[2] + '"' + (v ? '' : ' disabled') + '>Copy</button></div>';
+      }).join('') + '</div>';
+  }
+  function readyValue(card, key) {
+    if (key === 'name') return D.buildName(card);
+    if (key === 'utm') return D.buildUtm(card);
+    return card[key] || '';
+  }
+  function refreshMetaReady(card) {
+    const box = $('drawerBody').querySelector('.meta-ready'); if (!box) return;
+    box.querySelectorAll('[data-ready]').forEach(function (el) {
+      const v = readyValue(card, el.dataset.ready).trim();
+      el.textContent = v || 'Not filled in yet'; el.classList.toggle('ready-empty', !v);
+      const b = box.querySelector('[data-ready-copy="' + el.dataset.ready + '"]'); if (b) b.disabled = !v;
+    });
+  }
+
   function renderDrawer() {
     const card = cardById(openId); if (!card) { closeDrawer(); return; }
     const name = D.buildName(card); const utm = D.buildUtm(card);
@@ -334,9 +369,11 @@
       const v = (card.stageDates && card.stageDates[st.key]) || '';
       return '<div class="field"><label for="sd-' + st.key + '">' + esc(st.label) + '</label><input id="sd-' + st.key + '" type="date" data-stage="' + st.key + '" value="' + esc(v) + '"></div>';
     }).join('');
+    const expandBrief = stageIs(card, EXPANDING_BRIEF_STAGES);
     $('drawerBody').innerHTML =
+      (stageIs(card, ['approved']) ? metaReadyHtml(card) : '') +
       '<div class="section"><h3>Brief <span>Briefed by Alamin</span></h3><div class="grid">' +
-      textField(card, 'brief', 'Brief', { area: true, span: true, rows: 4, placeholder: 'The angle, the hook to test, the product and what the creative needs to show' }) +
+      textField(card, 'brief', 'Brief', { area: true, span: true, rows: 4, placeholder: 'The angle, the hook to test, the product and what the creative needs to show', cls: expandBrief ? 'autogrow' : '' }) +
       linkField(card, 'inspirationLink', 'Inspiration link', 'Motion, TikTok, Instagram or reference URL') +
       '</div></div>' +
 
@@ -387,6 +424,13 @@
 
   function bindDrawer(card) {
     $('drawerClose').onclick = closeDrawer;
+    $('drawerBody').querySelectorAll('textarea.autogrow').forEach(function (ta) {
+      const grow = function () { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; };
+      ta.addEventListener('input', grow); grow();
+    });
+    $('drawerBody').querySelectorAll('[data-ready-copy]').forEach(function (b) {
+      b.onclick = function () { const v = readyValue(card, b.dataset.readyCopy).trim(); if (v) navigator.clipboard.writeText(v).then(function () { toast(b.parentElement.querySelector('.ready-label').textContent + ' copied'); }); };
+    });
     $('f-id').onchange = function (e) { if (!renameCard(card, e.target.value)) e.target.value = card.id; else renderDrawer(); };
     $('f-id').onkeydown = function (e) { if (e.key === 'Enter') e.target.blur(); };
     $('drawerBody').querySelectorAll('[data-stage]').forEach(function (inp) {
@@ -415,6 +459,7 @@
       const update = function () {
         card[key] = inp.value;
         if (nameKeys.indexOf(key) >= 0) refreshName();
+        refreshMetaReady(card);
         queueSave(card);
       };
       inp.addEventListener('input', update);
