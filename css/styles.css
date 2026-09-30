@@ -245,6 +245,19 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--suede); }
 .note { background: var(--desert); border-radius: 6px; padding: 10px 12px; font-size: 13px; color: var(--suede); margin-bottom: 12px; }
 .note code { background: var(--pearl); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
+/* Brief that grows with its text in the early stages */
+textarea.autogrow { overflow: hidden; resize: none; min-height: 64px; }
+
+/* Ready for Meta box on Approved tickets */
+.meta-ready { border-left: 4px solid var(--umber); }
+.ready-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--pearl); }
+.ready-row:first-of-type { border-top: 0; }
+.ready-body { flex: 1; min-width: 0; }
+.ready-label { display: block; font-size: 11px; color: var(--ash); margin-bottom: 2px; }
+.ready-value { font-size: 13px; white-space: pre-wrap; word-break: break-word; color: var(--crater); }
+.ready-value.ready-empty { color: var(--ash); font-style: italic; }
+.ready-copy { flex: none; margin-top: 12px; }
+
 /* Stat tiles in the Meta data panel */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .stat { background: var(--pearl); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; }
